@@ -1834,18 +1834,31 @@ def get_created_courses():
 	if frappe.session.user == "Guest":
 		return created_courses
 
-	CourseInstructor = frappe.qb.DocType("Course Instructor")
+	# Check if user is Admin (Moderator role) - they see all courses
+	is_admin = "Moderator" in frappe.get_roles(frappe.session.user)
+
 	Course = frappe.qb.DocType("LMS Course")
 
-	query = (
-		frappe.qb.from_(CourseInstructor)
-		.join(Course)
-		.on(CourseInstructor.parent == Course.name)
-		.select(Course.name)
-		.where(CourseInstructor.instructor == frappe.session.user)
-		.orderby(Course.published_on, order=frappe.qb.desc)
-		.limit(3)
-	)
+	if is_admin:
+		# Admin sees all courses
+		query = (
+			frappe.qb.from_(Course)
+			.select(Course.name)
+			.orderby(Course.published_on, order=frappe.qb.desc)
+			.limit(3)
+		)
+	else:
+		# Course Creator sees only courses where they are an instructor
+		CourseInstructor = frappe.qb.DocType("Course Instructor")
+		query = (
+			frappe.qb.from_(CourseInstructor)
+			.join(Course)
+			.on(CourseInstructor.parent == Course.name)
+			.select(Course.name)
+			.where(CourseInstructor.instructor == frappe.session.user)
+			.orderby(Course.published_on, order=frappe.qb.desc)
+			.limit(3)
+		)
 
 	results = query.run(as_dict=True)
 	courses = [row["name"] for row in results]
@@ -1863,19 +1876,33 @@ def get_created_batches():
 	if frappe.session.user == "Guest":
 		return created_batches
 
-	CourseInstructor = frappe.qb.DocType("Course Instructor")
+	# Check if user is Admin (Moderator role) - they see all batches
+	is_admin = "Moderator" in frappe.get_roles(frappe.session.user)
+
 	Batch = frappe.qb.DocType("LMS Batch")
 
-	query = (
-		frappe.qb.from_(CourseInstructor)
-		.join(Batch)
-		.on(CourseInstructor.parent == Batch.name)
-		.select(Batch.name)
-		.where(CourseInstructor.instructor == frappe.session.user)
-		.where(Batch.start_date >= getdate())
-		.orderby(Batch.start_date, order=frappe.qb.asc)
-		.limit(4)
-	)
+	if is_admin:
+		# Admin sees all upcoming batches
+		query = (
+			frappe.qb.from_(Batch)
+			.select(Batch.name)
+			.where(Batch.start_date >= getdate())
+			.orderby(Batch.start_date, order=frappe.qb.asc)
+			.limit(4)
+		)
+	else:
+		# Course Creator sees only batches where they are an instructor
+		CourseInstructor = frappe.qb.DocType("Course Instructor")
+		query = (
+			frappe.qb.from_(CourseInstructor)
+			.join(Batch)
+			.on(CourseInstructor.parent == Batch.name)
+			.select(Batch.name)
+			.where(CourseInstructor.instructor == frappe.session.user)
+			.where(Batch.start_date >= getdate())
+			.orderby(Batch.start_date, order=frappe.qb.asc)
+			.limit(4)
+		)
 
 	results = query.run(as_dict=True)
 	batches = [row["name"] for row in results]
@@ -1892,30 +1919,56 @@ def get_admin_live_classes():
 	if frappe.session.user == "Guest":
 		return []
 
-	CourseInstructor = frappe.qb.DocType("Course Instructor")
+	# Check if user is Admin (Moderator role) - they see all live classes
+	is_admin = "Moderator" in frappe.get_roles(frappe.session.user)
+
 	LMSLiveClass = frappe.qb.DocType("LMS Live Class")
 
-	query = (
-		frappe.qb.from_(CourseInstructor)
-		.join(LMSLiveClass)
-		.on(CourseInstructor.parent == LMSLiveClass.batch_name)
-		.select(
-			LMSLiveClass.name,
-			LMSLiveClass.title,
-			LMSLiveClass.description,
-			LMSLiveClass.time,
-			LMSLiveClass.date,
-			LMSLiveClass.duration,
-			LMSLiveClass.attendees,
-			LMSLiveClass.start_url,
-			LMSLiveClass.join_url,
-			LMSLiveClass.owner,
+	if is_admin:
+		# Admin sees all upcoming live classes
+		query = (
+			frappe.qb.from_(LMSLiveClass)
+			.select(
+				LMSLiveClass.name,
+				LMSLiveClass.title,
+				LMSLiveClass.description,
+				LMSLiveClass.time,
+				LMSLiveClass.date,
+				LMSLiveClass.duration,
+				LMSLiveClass.attendees,
+				LMSLiveClass.start_url,
+				LMSLiveClass.join_url,
+				LMSLiveClass.owner,
+			)
+			.where(LMSLiveClass.date >= getdate())
+			.orderby(LMSLiveClass.date, order=frappe.qb.asc)
+			.limit(4)
 		)
-		.where(CourseInstructor.instructor == frappe.session.user)
-		.where(LMSLiveClass.date >= getdate())
-		.orderby(LMSLiveClass.date, order=frappe.qb.asc)
-		.limit(4)
-	)
+	else:
+		# Course Creator sees only live classes from batches where they are an instructor
+		CourseInstructor = frappe.qb.DocType("Course Instructor")
+		query = (
+			frappe.qb.from_(CourseInstructor)
+			.join(LMSLiveClass)
+			.on(CourseInstructor.parent == LMSLiveClass.batch_name)
+			.select(
+				LMSLiveClass.name,
+				LMSLiveClass.title,
+				LMSLiveClass.description,
+				LMSLiveClass.time,
+				LMSLiveClass.date,
+				LMSLiveClass.duration,
+				LMSLiveClass.attendees,
+				LMSLiveClass.start_url,
+				LMSLiveClass.join_url,
+				LMSLiveClass.owner,
+			)
+			.where(CourseInstructor.instructor == frappe.session.user)
+			.where(LMSLiveClass.date >= getdate())
+			.orderby(LMSLiveClass.date, order=frappe.qb.asc)
+			.limit(4)
+		)
+
 	results = query.run(as_dict=True)
 	return results
 
@@ -1925,12 +1978,20 @@ def get_admin_evals():
 	if frappe.session.user == "Guest":
 		return []
 
+	# Check if user is Admin (Moderator role) - they see all evaluations
+	is_admin = "Moderator" in frappe.get_roles(frappe.session.user)
+
+	filters = {
+		"date": [">=", getdate()],
+	}
+
+	# Course Creator only sees evaluations where they are the evaluator
+	if not is_admin:
+		filters["evaluator"] = frappe.session.user
+
 	evals = frappe.get_all(
 		"LMS Certificate Request",
-		{
-			"evaluator": frappe.session.user,
-			"date": [">=", getdate()],
-		},
+		filters,
 		[
 			"name",
 			"date",

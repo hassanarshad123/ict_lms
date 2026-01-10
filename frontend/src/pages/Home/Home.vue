@@ -10,18 +10,14 @@
 				<div class="text-xl font-bold text-ink-gray-9">
 					{{ __('Hey') }}, {{ user.data?.full_name }} 👋
 				</div>
-				<div>
-					<TabButtons v-if="isAdmin" v-model="currentTab" :buttons="tabs" />
-					<div
-						v-else
-						@click="showStreakModal = true"
-						class="bg-surface-amber-2 px-2 py-1 rounded-md cursor-pointer"
-					>
-						<span> 🔥 </span>
-						<span class="text-ink-gray-9">
-							{{ streakInfo.data?.current_streak }}
-						</span>
-					</div>
+				<div
+					@click="showStreakModal = true"
+					class="bg-surface-amber-2 px-2 py-1 rounded-md cursor-pointer"
+				>
+					<span> 🔥 </span>
+					<span class="text-ink-gray-9">
+						{{ streakInfo.data?.current_streak }}
+					</span>
 				</div>
 			</div>
 
@@ -31,7 +27,7 @@
 		</div>
 
 		<AdminHome
-			v-if="isAdmin && currentTab === 'instructor'"
+			v-if="isAdmin"
 			:liveClasses="adminLiveClasses"
 			:evals="adminEvals"
 		/>
@@ -45,7 +41,6 @@ import {
 	Breadcrumbs,
 	call,
 	createResource,
-	TabButtons,
 	usePageMeta,
 } from 'frappe-ui'
 import { sessionStore } from '@/stores/session'
@@ -56,7 +51,6 @@ import Streak from '@/pages/Home/Streak.vue'
 const user = inject<any>('$user')
 const { brand } = sessionStore()
 const evalCount = ref(0)
-const currentTab = ref<'student' | 'instructor'>('instructor')
 const showStreakModal = ref(false)
 
 onMounted(() => {
@@ -143,11 +137,6 @@ const subtitle = computed(() => {
 		return __('Resume where you left off')
 	}
 })
-
-const tabs = [
-	{ label: __('Student'), value: 'student' },
-	{ label: __('Instructor'), value: 'instructor' },
-]
 
 usePageMeta(() => {
 	return {

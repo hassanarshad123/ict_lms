@@ -157,7 +157,13 @@ const title = ref('')
 const certification = ref(false)
 const filters = ref({})
 const is_student = computed(() => user.data?.is_student)
-const currentTab = ref(is_student.value ? 'All' : 'Upcoming')
+const is_course_creator = computed(() => user.data?.is_course_creator)
+const is_admin = computed(() => user.data?.is_admin)
+const is_teacher = computed(() => user.data?.is_teacher)
+// Check if user has admin-level access (Admin, Course Creator, or Teacher)
+const hasAdminAccess = computed(() => is_admin.value || is_course_creator.value || is_teacher.value)
+// Students and Course Creators default to 'All', others to 'Upcoming'
+const currentTab = ref(is_student.value || is_course_creator.value ? 'All' : 'Upcoming')
 const orderBy = ref('start_date')
 const readOnlyMode = window.read_only_mode
 const router = useRouter()
@@ -244,16 +250,11 @@ const updateTabFilter = () => {
 	if (!user.data) {
 		return
 	}
-	if (currentTab.value == 'Enrolled' && is_student.value) {
-		filters.value['enrolled'] = 1
+	// Users with admin access (Admin, Course Creator, Teacher) see all batches with tab filters
+	if (hasAdminAccess.value) {
 		delete filters.value['start_date']
 		delete filters.value['published']
-		orderBy.value = 'start_date desc'
-	} else if (is_student.value) {
 		delete filters.value['enrolled']
-	} else {
-		delete filters.value['start_date']
-		delete filters.value['published']
 		orderBy.value = 'start_date desc'
 		if (currentTab.value == 'Upcoming') {
 			filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
@@ -264,10 +265,23 @@ const updateTabFilter = () => {
 		} else if (currentTab.value == 'Unpublished') {
 			filters.value['published'] = 0
 		}
+		// 'All' tab shows all batches without additional filters
+	} else if (currentTab.value == 'Enrolled' && is_student.value) {
+		filters.value['enrolled'] = 1
+		delete filters.value['start_date']
+		delete filters.value['published']
+		orderBy.value = 'start_date desc'
+	} else if (is_student.value) {
+		delete filters.value['enrolled']
 	}
 }
 
 const updateStudentFilter = () => {
+	// Skip for users with admin access - they already have proper filters applied
+	if (hasAdminAccess.value) {
+		return
+	}
+	// Apply student filters for non-admin students not on Enrolled tab, or guests
 	if (!user.data || (is_student.value && currentTab.value != 'Enrolled')) {
 		filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
 		filters.value['published'] = 1

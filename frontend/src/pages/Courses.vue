@@ -139,7 +139,9 @@ const currentCategory = ref(null)
 const title = ref('')
 const certification = ref(false)
 const filters = ref({})
-const currentTab = ref('Live')
+// Students default to 'Enrolled', others default to 'Live'
+const is_student = computed(() => user.data?.is_student && !user.data?.is_admin && !user.data?.is_course_creator && !user.data?.is_teacher)
+const currentTab = ref(is_student.value ? 'Enrolled' : 'Live')
 const { brand } = sessionStore()
 const courseCount = ref(0)
 
