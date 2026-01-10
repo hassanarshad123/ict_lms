@@ -389,11 +389,11 @@ const canMakeAnnouncement = () => {
 
 	if (!batch.data?.students?.length) return false
 
-	return user.data?.is_moderator || user.data?.is_evaluator
+	return user.data?.is_admin || user.data?.is_course_creator
 }
 
 const isAdmin = computed(() => {
-	return user.data?.is_moderator || user.data?.is_evaluator
+	return user.data?.is_admin || user.data?.is_course_creator
 })
 
 usePageMeta(() => {

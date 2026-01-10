@@ -22,6 +22,44 @@ from lms.lms.utils import (
 
 
 class LMSBatch(Document):
+	def before_insert(self):
+		"""Enforce role check on batch creation."""
+		self.enforce_role_permissions("create")
+
+	def before_save(self):
+		"""Enforce role check on batch update."""
+		if not self.is_new():
+			self.enforce_role_permissions("write")
+
+	def on_trash(self):
+		"""Enforce role check on batch deletion."""
+		self.enforce_role_permissions("delete")
+
+	def enforce_role_permissions(self, action):
+		"""
+		Enforce role-based permissions for batch operations.
+		Only Admin (Moderator) and Course Creator can create/edit/delete batches.
+		Teachers and Students cannot perform these actions.
+		"""
+		if frappe.session.user == "Administrator":
+			return
+
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		# Admin (Moderator) can do everything
+		if "Moderator" in user_roles:
+			return
+
+		# Course Creator can create/edit/delete batches
+		if "Course Creator" in user_roles:
+			return
+
+		# Teachers and Students cannot create/edit/delete batches
+		frappe.throw(
+			_("You do not have permission to {0} batches. Only Admin and Course Creator can perform this action.").format(action),
+			frappe.PermissionError
+		)
+
 	def validate(self):
 		self.validate_seats_left()
 		self.validate_batch_end_date()

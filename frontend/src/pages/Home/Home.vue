@@ -67,9 +67,9 @@ onMounted(() => {
 
 const isAdmin = computed(() => {
 	return (
-		user.data?.is_moderator ||
-		user.data?.is_instructor ||
-		user.data?.is_evaluator
+		user.data?.is_admin ||
+		user.data?.is_course_creator ||
+		user.data?.is_teacher
 	)
 })
 

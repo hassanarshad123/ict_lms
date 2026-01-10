@@ -354,7 +354,7 @@ const meta = reactive({
 })
 
 onMounted(() => {
-	if (!user.data?.is_moderator && !user.data?.is_instructor) {
+	if (!user.data?.is_admin && !user.data?.is_course_creator) {
 		router.push({ name: 'Courses' })
 	}
 
@@ -593,18 +593,22 @@ const removeImage = () => {
 }
 
 const check_permission = () => {
-	let user_is_instructor = false
-	if (user.data?.is_moderator) return
+	// Admin can edit any course
+	if (user.data?.is_admin) return
 
-	instructors.value.forEach((instructor) => {
-		if (!user_is_instructor && instructor == user.data?.name) {
-			user_is_instructor = true
-		}
-	})
-
-	if (!user_is_instructor) {
-		router.push({ name: 'Courses' })
+	// Course Creator must be an instructor on this course to edit it
+	if (user.data?.is_course_creator) {
+		let user_is_instructor = false
+		instructors.value.forEach((instructor) => {
+			if (!user_is_instructor && instructor == user.data?.name) {
+				user_is_instructor = true
+			}
+		})
+		if (user_is_instructor) return
 	}
+
+	// Teachers and Students cannot edit courses
+	router.push({ name: 'Courses' })
 }
 
 const breadcrumbs = computed(() => {

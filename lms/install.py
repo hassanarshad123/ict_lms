@@ -21,10 +21,12 @@ def before_uninstall():
 
 
 def create_lms_roles():
-	create_course_creator_role()
-	create_moderator_role()
+	create_moderator_role()  # Admin
+	create_course_creator_role()  # Course Creator
+	create_teacher_role()  # Teacher
+	create_lms_student_role()  # Student
+	# Keep evaluator for backward compatibility but it's mapped to Teacher
 	create_evaluator_role()
-	create_lms_student_role()
 
 
 def delete_lms_roles():
@@ -87,6 +89,22 @@ def create_lms_student_role():
 		role.update(
 			{
 				"role_name": "LMS Student",
+				"home_page": "",
+				"desk_access": 0,
+			}
+		)
+		role.save()
+
+
+def create_teacher_role():
+	"""Create Teacher role - can view assigned courses/batches but cannot create/delete."""
+	if frappe.db.exists("Role", "Teacher"):
+		frappe.db.set_value("Role", "Teacher", "desk_access", 0)
+	else:
+		role = frappe.new_doc("Role")
+		role.update(
+			{
+				"role_name": "Teacher",
 				"home_page": "",
 				"desk_access": 0,
 			}
@@ -176,7 +194,8 @@ def create_batch_source():
 
 
 def give_lms_roles_to_admin():
-	roles = ["Course Creator", "Moderator", "Batch Evaluator"]
+	# Admin gets Moderator role which grants full access
+	roles = ["Moderator", "Course Creator", "Teacher", "Batch Evaluator"]
 	for role in roles:
 		if not frappe.db.exists("Has Role", {"parent": "Administrator", "role": role}):
 			doc = frappe.new_doc("Has Role")

@@ -142,6 +142,7 @@ import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronDown, Plus } from 'lucide-vue-next'
 import { sessionStore } from '@/stores/session'
+import { canCreateBatch } from '@/utils'
 import BatchCard from '@/components/BatchCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
@@ -321,9 +322,9 @@ const batchTabs = computed(() => {
 	]
 
 	if (
-		user.data?.is_moderator ||
-		user.data?.is_instructor ||
-		user.data?.is_evaluator
+		user.data?.is_admin ||
+		user.data?.is_course_creator ||
+		user.data?.is_teacher
 	) {
 		tabs.push({ label: __('Upcoming') })
 		tabs.push({ label: __('Archived') })
@@ -333,17 +334,6 @@ const batchTabs = computed(() => {
 	}
 	return tabs
 })
-
-const canCreateBatch = () => {
-	if (readOnlyMode) return false
-	if (
-		user.data?.is_moderator ||
-		user.data?.is_instructor ||
-		user.data?.is_evaluator
-	)
-		return true
-	return false
-}
 
 const breadcrumbs = computed(() => [
 	{

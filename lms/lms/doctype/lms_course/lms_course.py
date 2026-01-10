@@ -9,13 +9,48 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
 
-from ...utils import generate_slug, update_payment_record, validate_image
+from ...utils import generate_slug, update_payment_record, validate_image, can_create_courses
 
 
 class LMSCourse(Document):
 	def before_insert(self):
-		"""Enforce default values on course creation."""
+		"""Enforce default values and role check on course creation."""
+		self.enforce_role_permissions("create")
 		self.enforce_course_defaults()
+
+	def before_save(self):
+		"""Enforce role check on course update."""
+		if not self.is_new():
+			self.enforce_role_permissions("write")
+
+	def on_trash(self):
+		"""Enforce role check on course deletion."""
+		self.enforce_role_permissions("delete")
+
+	def enforce_role_permissions(self, action):
+		"""
+		Enforce role-based permissions for course operations.
+		Only Admin (Moderator) and Course Creator can create/edit/delete courses.
+		Teachers and Students cannot perform these actions.
+		"""
+		if frappe.session.user == "Administrator":
+			return
+
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		# Admin (Moderator) can do everything
+		if "Moderator" in user_roles:
+			return
+
+		# Course Creator can create/edit/delete
+		if "Course Creator" in user_roles:
+			return
+
+		# Teachers and Students cannot create/edit/delete courses
+		frappe.throw(
+			_("You do not have permission to {0} courses. Only Admin and Course Creator can perform this action.").format(action),
+			frappe.PermissionError
+		)
 
 	def validate(self):
 		self.enforce_course_defaults()

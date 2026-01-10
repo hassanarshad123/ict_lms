@@ -45,10 +45,22 @@ def get_user_info():
 		as_dict=1,
 	)
 	user["roles"] = frappe.get_roles(user.name)
-	user.is_instructor = "Course Creator" in user.roles
-	user.is_moderator = "Moderator" in user.roles
-	user.is_evaluator = "Batch Evaluator" in user.roles
-	user.is_student = not user.is_instructor and not user.is_moderator and not user.is_evaluator
+
+	# New 4-role model flags
+	user.is_admin = "Moderator" in user.roles  # Admin = Moderator
+	user.is_course_creator = "Course Creator" in user.roles
+	user.is_teacher = "Teacher" in user.roles
+	user.is_student = "LMS Student" in user.roles
+
+	# Legacy flags for backward compatibility (mapped to new roles)
+	user.is_moderator = user.is_admin  # Moderator = Admin
+	user.is_instructor = user.is_course_creator  # Instructor = Course Creator
+	user.is_evaluator = "Batch Evaluator" in user.roles  # Keep for backward compatibility
+
+	# Computed permission flags
+	user.can_create = user.is_admin or user.is_course_creator  # Can create courses/batches
+	user.can_manage_roles = user.is_admin  # Only Admin can manage roles
+
 	user.is_fc_site = is_fc_site()
 	user.is_system_manager = "System Manager" in user.roles
 	user.sitename = frappe.local.site
@@ -1326,20 +1338,38 @@ def get_certification_details(course):
 
 @frappe.whitelist()
 def save_role(user, role, value):
+	"""
+	Save a role for a user. Only Admin (Moderator) can manage roles.
+	Supports the 4-role model: Admin, Course Creator, Teacher, Student
+	"""
 	frappe.only_for("Moderator")
+
+	# Map UI role names to internal Frappe role names
+	role_mapping = {
+		"Admin": "Moderator",
+		"Course Creator": "Course Creator",
+		"Teacher": "Teacher",
+		"Student": "LMS Student",
+		# Legacy mappings for backward compatibility
+		"Moderator": "Moderator",
+		"LMS Student": "LMS Student",
+	}
+
+	internal_role = role_mapping.get(role, role)
+
 	if cint(value):
 		doc = frappe.get_doc(
 			{
 				"doctype": "Has Role",
 				"parent": user,
-				"role": role,
+				"role": internal_role,
 				"parenttype": "User",
 				"parentfield": "roles",
 			}
 		)
 		doc.save(ignore_permissions=True)
 	else:
-		frappe.db.delete("Has Role", {"parent": user, "role": role})
+		frappe.db.delete("Has Role", {"parent": user, "role": internal_role})
 	frappe.clear_cache(user=user)
 	return True
 

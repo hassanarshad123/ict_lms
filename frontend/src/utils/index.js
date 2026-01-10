@@ -552,11 +552,14 @@ const getSidebarItems = () => {
 }
 
 const isAdmin = () => {
+	// Check if user has admin-level access (can see admin items in sidebar)
+	// Admin (Moderator), Course Creator, and Teacher can see admin items
+	// Only Students have restricted access
 	const { userResource } = usersStore()
 	return (
-		userResource?.data?.is_instructor ||
-		userResource?.data?.is_moderator ||
-		userResource.data?.is_evaluator
+		userResource?.data?.is_admin ||
+		userResource?.data?.is_course_creator ||
+		userResource?.data?.is_teacher
 	)
 }
 
@@ -693,9 +696,21 @@ export const sanitizeHTML = (text) => {
 
 export const canCreateCourse = () => {
 	const { userResource } = usersStore()
+	// Only Admin (Moderator) and Course Creator can create courses
+	// Teachers and Students cannot create courses
 	return (
 		!readOnlyMode &&
-		(userResource.data?.is_instructor || userResource.data?.is_moderator)
+		(userResource.data?.is_admin || userResource.data?.is_course_creator)
+	)
+}
+
+export const canCreateBatch = () => {
+	const { userResource } = usersStore()
+	// Only Admin (Moderator) and Course Creator can create batches
+	// Teachers and Students cannot create batches
+	return (
+		!readOnlyMode &&
+		(userResource.data?.is_admin || userResource.data?.is_course_creator)
 	)
 }
 

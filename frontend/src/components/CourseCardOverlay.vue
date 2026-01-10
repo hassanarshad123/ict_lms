@@ -63,7 +63,7 @@
 					{{ __('Contact the Administrator to enroll for this course.') }}
 				</Badge>
 				<Button
-					v-else-if="!user.data?.is_moderator && !is_instructor()"
+					v-else-if="!user.data?.is_admin && !(user.data?.is_course_creator && is_instructor())"
 					@click="enrollStudent()"
 					variant="solid"
 					class="w-full"
@@ -89,7 +89,7 @@
 					{{ __('Get Certificate') }}
 				</Button>
 				<Button
-					v-if="user.data?.is_moderator || is_instructor()"
+					v-if="user.data?.is_admin || user.data?.is_course_creator || user.data?.is_teacher"
 					class="w-full mt-2"
 					size="md"
 					@click="showProgressSummary"
@@ -100,7 +100,7 @@
 					</template>
 				</Button>
 				<router-link
-					v-if="user?.data?.is_moderator || is_instructor()"
+					v-if="user?.data?.is_admin || (user?.data?.is_course_creator && is_instructor())"
 					:to="{
 						name: 'CourseForm',
 						params: {
@@ -169,7 +169,7 @@
 		</div>
 	</div>
 	<CourseProgressSummary
-		v-if="user.data?.is_moderator || is_instructor()"
+		v-if="user.data?.is_admin || user.data?.is_course_creator || user.data?.is_teacher"
 		v-model="showProgressModal"
 		:courseName="course.data.name"
 		:enrollments="course.data.enrollments"

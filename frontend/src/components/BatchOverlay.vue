@@ -201,12 +201,16 @@ const isStudent = computed(() => {
 	return props.batch.data?.students?.includes(user.data?.name)
 })
 
-const isModerator = computed(() => {
-	return user.data?.is_moderator
+const isAdmin = computed(() => {
+	return user.data?.is_admin
 })
 
-const isEvaluator = computed(() => {
-	return user.data?.is_evaluator
+const isCourseCreator = computed(() => {
+	return user.data?.is_course_creator
+})
+
+const isTeacher = computed(() => {
+	return user.data?.is_teacher
 })
 
 const isInstructor = computed(() => {
@@ -218,10 +222,12 @@ const isInstructor = computed(() => {
 })
 
 const canAccessBatch = computed(() => {
-	return isModerator.value || isStudent.value || isEvaluator.value
+	// Admin, Course Creator, Teacher (if instructor), and enrolled Students can access
+	return isAdmin.value || isCourseCreator.value || isTeacher.value || isStudent.value
 })
 
 const canEditBatch = computed(() => {
-	return isModerator.value || isInstructor.value
+	// Only Admin or Course Creator who is instructor can edit
+	return isAdmin.value || (isCourseCreator.value && isInstructor.value)
 })
 </script>

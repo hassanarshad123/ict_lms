@@ -319,12 +319,17 @@ def has_course_instructor_role(member=None):
 
 
 def can_create_batches(member=None):
+	"""
+	Check if user can create batches.
+	Only Admin (Moderator) and Course Creator can create batches.
+	Teachers and Students cannot.
+	"""
 	if not member:
 		member = frappe.session.user
 
 	if has_moderator_role(member):
 		return True
-	if has_evaluator_role(member):
+	if has_course_instructor_role(member):
 		return True
 	return False
 
@@ -351,6 +356,31 @@ def has_student_role(member=None):
 		{"parent": member or frappe.session.user, "role": "LMS Student"},
 		"name",
 	)
+
+
+def has_teacher_role(member=None):
+	"""Check if user has Teacher role."""
+	return frappe.db.get_value(
+		"Has Role",
+		{"parent": member or frappe.session.user, "role": "Teacher"},
+		"name",
+	)
+
+
+def can_create_courses(member=None):
+	"""
+	Check if user can create courses.
+	Only Admin (Moderator) and Course Creator can create courses.
+	Teachers and Students cannot.
+	"""
+	if not member:
+		member = frappe.session.user
+
+	if has_moderator_role(member):
+		return True
+	if has_course_instructor_role(member):
+		return True
+	return False
 
 
 def get_courses_under_review():
@@ -1696,12 +1726,16 @@ def get_lesson_creation_details(course, chapter, lesson):
 
 @frappe.whitelist()
 def get_roles(name):
+	"""
+	Get LMS roles for a user. Only Admin (Moderator) can call this.
+	Returns the 4 role model: Admin, Course Creator, Teacher, Student
+	"""
 	frappe.only_for("Moderator")
 	return {
-		"moderator": has_moderator_role(name),
+		"admin": has_moderator_role(name),  # Admin = Moderator
 		"course_creator": has_course_instructor_role(name),
-		"batch_evaluator": has_evaluator_role(name),
-		"lms_student": has_student_role(name),
+		"teacher": has_teacher_role(name),
+		"student": has_student_role(name),  # Student = LMS Student
 	}
 
 

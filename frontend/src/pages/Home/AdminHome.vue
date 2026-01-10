@@ -68,12 +68,13 @@
 				class="leading-5 text-base w-full md:w-2/5 text-base text-center text-ink-gray-7"
 			>
 				{{
-					__(
-						'There are no courses currently. Create your first course to get started!'
-					)
+					canCreate
+						? __('There are no courses currently. Create your first course to get started!')
+						: __('There are no courses assigned to you currently.')
 				}}
 			</div>
 			<router-link
+				v-if="canCreate"
 				:to="{ name: 'CourseForm', params: { courseName: 'new' } }"
 				class="mt-4"
 			>
@@ -157,7 +158,7 @@
 								class="flex items-center space-x-2 text-ink-gray-9 mt-auto"
 							>
 								<a
-									v-if="user.data?.is_moderator || user.data?.is_evaluator"
+									v-if="user.data?.is_admin || user.data?.is_course_creator"
 									:href="cls.start_url"
 									target="_blank"
 									class="cursor-pointer inline-flex items-center justify-center gap-2 transition-colors focus:outline-none text-ink-gray-8 bg-surface-gray-2 hover:bg-surface-gray-3 active:bg-surface-gray-4 focus-visible:ring focus-visible:ring-outline-gray-3 h-7 text-base px-2 rounded"
@@ -196,7 +197,7 @@
 </template>
 <script setup lang="ts">
 import { Button, createResource, Tooltip } from 'frappe-ui'
-import { inject } from 'vue'
+import { computed, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import {
 	Calendar,
@@ -213,6 +214,11 @@ import CourseCard from '@/components/CourseCard.vue'
 import BatchCard from '@/components/BatchCard.vue'
 
 const user = inject<any>('$user')
+
+// Only Admin and Course Creator can create courses
+const canCreate = computed(() => {
+	return user.data?.is_admin || user.data?.is_course_creator
+})
 const dayjs = inject<any>('$dayjs')
 const router = useRouter()
 
