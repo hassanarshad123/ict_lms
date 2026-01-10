@@ -1,5 +1,5 @@
 <template>
-	<div v-if="isAdmin || isStudent" class="">
+	<div v-if="isAdmin || isStudent || isInstructor" class="">
 		<header
 			class="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
 		>
@@ -63,7 +63,7 @@
 							<div v-if="tab.label == 'Courses'">
 								<BatchCourses :batch="batch.data.name" />
 							</div>
-							<div v-else-if="tab.label == 'Dashboard' && isStudent">
+							<div v-else-if="tab.label == 'Dashboard' && isStudent && !isInstructor">
 								<BatchDashboard :batch="batch" :isStudent="isStudent" />
 							</div>
 							<div v-else-if="tab.label == 'Dashboard'">
@@ -278,7 +278,7 @@ const tabs = computed(() => {
 		icon: LayoutDashboard,
 	})
 
-	if (isAdmin.value) {
+	if (isAdmin.value || isInstructor.value) {
 		batchTabs.push({
 			label: 'Students',
 			icon: ClipboardPen,
@@ -295,7 +295,7 @@ const tabs = computed(() => {
 		icon: Laptop,
 	})
 
-	if (isAdmin.value) {
+	if (isAdmin.value || isInstructor.value) {
 		batchTabs.push({
 			label: 'Assessments',
 			icon: BookOpenCheck,
@@ -394,6 +394,11 @@ const canMakeAnnouncement = () => {
 
 const isAdmin = computed(() => {
 	return user.data?.is_admin || user.data?.is_course_creator
+})
+
+const isInstructor = computed(() => {
+	if (!user?.data || !batch.data?.instructors) return false
+	return batch.data.instructors.some(instructor => instructor.name === user.data.name)
 })
 
 usePageMeta(() => {
