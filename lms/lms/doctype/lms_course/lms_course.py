@@ -13,7 +13,12 @@ from ...utils import generate_slug, update_payment_record, validate_image
 
 
 class LMSCourse(Document):
+	def before_insert(self):
+		"""Enforce default values on course creation."""
+		self.enforce_course_defaults()
+
 	def validate(self):
+		self.enforce_course_defaults()
 		self.validate_published()
 		self.validate_instructors()
 		self.validate_video_link()
@@ -23,6 +28,16 @@ class LMSCourse(Document):
 		self.validate_amount_and_currency()
 		self.image = validate_image(self.image)
 		self.validate_card_gradient()
+
+	def enforce_course_defaults(self):
+		"""
+		Enforce mandatory course configuration:
+		- published must always be True
+		- disable_self_learning must always be True
+		These settings are locked and cannot be changed by any user or role.
+		"""
+		self.published = 1
+		self.disable_self_learning = 1
 
 	def validate_published(self):
 		if self.published and not self.published_on:

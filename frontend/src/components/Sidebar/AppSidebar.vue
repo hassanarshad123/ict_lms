@@ -132,7 +132,7 @@
 							</div>
 						</template>
 					</Tooltip>
-					<Tooltip :text="__('Powered by Learning')">
+					<Tooltip :text="__('Powered by ICT PK | Built by Zensbot.com')">
 						<Zap
 							class="size-4 stroke-1.5 text-ink-gray-7 cursor-pointer"
 							@click="redirectToWebsite()"
@@ -170,13 +170,13 @@
 			v-model="showHelpModal"
 			v-model:articles="articles"
 			appName="learning"
-			title="Frappe Learning"
+			title="ICT PK"
 			:logo="LMSLogo"
 			:afterSkip="(step) => capture('onboarding_step_skipped_' + step)"
 			:afterSkipAll="() => capture('onboarding_steps_skipped')"
 			:afterReset="(step) => capture('onboarding_step_reset_' + step)"
 			:afterResetAll="() => capture('onboarding_steps_reset')"
-			docsLink="https://docs.frappe.io/learning"
+			docsLink="https://zensbot.com"
 		/>
 		<IntermediateStepModal
 			v-model="showIntermediateModal"
@@ -595,7 +595,7 @@ watch(userResource, async () => {
 })
 
 const redirectToWebsite = () => {
-	window.open('https://frappe.io/learning', '_blank')
+	window.open('https://zensbot.com', '_blank')
 }
 
 onUnmounted(() => {

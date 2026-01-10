@@ -30,14 +30,6 @@
 								:label="__('Title')"
 								:required="true"
 							/>
-							<Link
-								doctype="LMS Category"
-								v-model="course.category"
-								:label="__('Category')"
-								:onCreate="(value, close) => openSettings('Categories', close)"
-							/>
-						</div>
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
 							<MultiSelect
 								v-model="instructors"
 								doctype="User"
@@ -46,33 +38,6 @@
 								:onCreate="(close) => openSettings('Members', close)"
 								:required="true"
 							/>
-							<div>
-								<div class="text-xs text-ink-gray-5">
-									{{ __('Tags') }}
-								</div>
-								<FormControl
-									v-model="newTag"
-									:placeholder="__('Add a keyword and then press enter')"
-									:class="['w-full', 'flex-1', 'my-1']"
-									@keyup.enter="updateTags()"
-									id="tags"
-								/>
-								<div>
-									<div class="flex items-center flex-wrap gap-2">
-										<div
-											v-if="course.tags"
-											v-for="tag in course.tags?.split(', ')"
-											class="flex items-center bg-surface-gray-2 text-ink-gray-7 p-2 rounded-md"
-										>
-											{{ tag }}
-											<X
-												class="stroke-1.5 w-3 h-3 ml-2 cursor-pointer"
-												@click="removeTag(tag)"
-											/>
-										</div>
-									</div>
-								</div>
-							</div>
 						</div>
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
 							<div class="mb-4">
@@ -142,21 +107,6 @@
 							{{ __('Settings') }}
 						</div>
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-							<div
-								v-if="user.data?.is_moderator"
-								class="flex flex-col space-y-5"
-							>
-								<FormControl
-									type="checkbox"
-									v-model="course.published"
-									:label="__('Published')"
-								/>
-								<FormControl
-									v-model="course.published_on"
-									:label="__('Published On')"
-									type="date"
-								/>
-							</div>
 							<div class="flex flex-col space-y-5">
 								<FormControl
 									type="checkbox"
@@ -167,11 +117,6 @@
 									type="checkbox"
 									v-model="course.featured"
 									:label="__('Featured')"
-								/>
-								<FormControl
-									type="checkbox"
-									v-model="course.disable_self_learning"
-									:label="__('Disable Self Enrollment')"
 								/>
 							</div>
 						</div>
@@ -347,7 +292,7 @@ import {
 	watch,
 	getCurrentInstance,
 } from 'vue'
-import { Image, Trash2, X } from 'lucide-vue-next'
+import { Image, Trash2 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { capture, startRecording, stopRecording } from '@/telemetry'
 import { useOnboarding } from 'frappe-ui/frappe'
@@ -366,7 +311,6 @@ import MultiSelect from '@/components/Controls/MultiSelect.vue'
 import ColorSwatches from '@/components/Controls/ColorSwatches.vue'
 
 const user = inject('$user')
-const newTag = ref('')
 const { brand } = sessionStore()
 const router = useRouter()
 const instructors = ref([])
@@ -390,11 +334,11 @@ const course = reactive({
 	card_gradient: '',
 	tags: '',
 	category: '',
-	published: false,
+	published: true, // Always enabled by default, enforced by backend
 	published_on: '',
 	featured: false,
 	upcoming: false,
-	disable_self_learning: false,
+	disable_self_learning: true, // Always enabled by default, enforced by backend
 	enable_certification: false,
 	paid_course: false,
 	paid_certificate: false,
@@ -639,21 +583,6 @@ watch(
 		}
 	}
 )
-
-const updateTags = () => {
-	if (newTag.value) {
-		course.tags = course.tags ? `${course.tags}, ${newTag.value}` : newTag.value
-		newTag.value = ''
-	}
-}
-
-const removeTag = (tag) => {
-	course.tags = course.tags
-		?.split(', ')
-		.filter((t) => t !== tag)
-		.join(', ')
-	newTag.value = ''
-}
 
 const saveImage = (file) => {
 	course.course_image = file

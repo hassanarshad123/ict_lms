@@ -6,7 +6,7 @@
 				<span
 					class="select-none text-xl font-semibold tracking-tight text-gray-900"
 				>
-					Learning
+					ICT PK
 				</span>
 			</div>
 			<div
@@ -18,7 +18,7 @@
 
 				<div class="mb-5">
 					<div class="text-sm text-gray-700 mb-2">
-						{{ __('What is your use case for Frappe Learning?') }}
+						{{ __('What is your use case for ICT PK?') }}
 					</div>
 					<FormControl
 						v-model="persona.useCase"
