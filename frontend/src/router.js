@@ -65,6 +65,7 @@ const routes = [
 		path: '/statistics',
 		name: 'Statistics',
 		component: () => import('@/pages/Statistics.vue'),
+		meta: { requiresAdmin: true },
 	},
 	{
 		path: '/user/:username',
@@ -294,6 +295,16 @@ router.beforeEach(async (to, from, next) => {
 			return
 		}
 	}
+
+	// Check for admin-only routes (like Statistics)
+	if (to.meta.requiresAdmin && isLoggedIn) {
+		const isAdmin = userResource?.data?.is_admin
+		if (!isAdmin) {
+			// Redirect non-admin users to home page
+			return next({ name: 'Home' })
+		}
+	}
+
 	return next()
 })
 

@@ -765,7 +765,7 @@ def save_certificate_details(
 
 @frappe.whitelist()
 def delete_documents(doctype, documents):
-	frappe.only_for("Moderator")
+	frappe.only_for(["Moderator", "Course Creator"])
 	for doc in documents:
 		frappe.delete_doc(doctype, doc)
 

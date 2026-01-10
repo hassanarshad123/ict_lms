@@ -60,8 +60,8 @@
 								<span class="text-ink-red-3">*</span>
 							</label>
 							<Autocomplete
-								@update:modelValue="(opt) => (liveClass.timezone = opt.value)"
-								:modelValue="liveClass.timezone"
+								@update:modelValue="(opt) => (liveClass.timezone = opt?.value || opt)"
+								:modelValue="timezoneDisplayValue"
 								:options="getTimezoneOptions()"
 								:required="true"
 							/>
@@ -92,7 +92,7 @@ import {
 	Autocomplete,
 	toast,
 } from 'frappe-ui'
-import { reactive, inject, onMounted } from 'vue'
+import { reactive, inject, onMounted, computed } from 'vue'
 import { getTimezones, getUserTimezone } from '@/utils/'
 
 const liveClasses = defineModel('reloadLiveClasses')
@@ -117,10 +117,19 @@ let liveClass = reactive({
 	date: '',
 	time: '',
 	duration: '',
-	timezone: '',
-	auto_recording: 'No Recording',
+	timezone: getUserTimezone(),
+	auto_recording: 'Cloud',
 	batch: props.batch,
 	host: user.data.name,
+})
+
+// Computed property to properly display timezone in Autocomplete
+const timezoneDisplayValue = computed(() => {
+	if (!liveClass.timezone) return null
+	return {
+		label: liveClass.timezone,
+		value: liveClass.timezone,
+	}
 })
 
 onMounted(() => {
@@ -235,6 +244,6 @@ const refreshForm = () => {
 	liveClass.time = ''
 	liveClass.duration = ''
 	liveClass.timezone = getUserTimezone()
-	liveClass.auto_recording = 'No Recording'
+	liveClass.auto_recording = 'Cloud'
 }
 </script>

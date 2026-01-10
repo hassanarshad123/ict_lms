@@ -344,6 +344,7 @@ export function getTimezones() {
 		'Asia/Muscat',
 		'Asia/Baku',
 		'Asia/Kabul',
+		'Asia/Karachi',
 		'Asia/Yekaterinburg',
 		'Asia/Tashkent',
 		'Asia/Calcutta',
@@ -387,6 +388,7 @@ export function getTimezones() {
 }
 
 export function getUserTimezone() {
+	const DEFAULT_TIMEZONE = 'Asia/Karachi' // Pakistan Standard Time
 	try {
 		const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 		const supportedTimezones = getTimezones()
@@ -394,11 +396,12 @@ export function getUserTimezone() {
 		if (supportedTimezones.includes(timezone)) {
 			return timezone // e.g., 'Asia/Calcutta', 'America/New_York', etc.
 		} else {
-			throw Error('unsupported timezone')
+			// Return default timezone for unsupported browser timezones
+			return DEFAULT_TIMEZONE
 		}
 	} catch (error) {
 		console.error('Error getting timezone:', error)
-		return null
+		return DEFAULT_TIMEZONE
 	}
 }
 
@@ -502,6 +505,9 @@ const getSidebarItems = () => {
 					icon: 'TrendingUp',
 					to: 'Statistics',
 					activeFor: ['Statistics'],
+					condition: () => {
+						return isAdminOnly()
+					},
 				},
 				{
 					label: 'Contact Us',
@@ -561,6 +567,13 @@ const isAdmin = () => {
 		userResource?.data?.is_course_creator ||
 		userResource?.data?.is_teacher
 	)
+}
+
+const isAdminOnly = () => {
+	// Check if user is Admin (Moderator) only - used for restricted features like Statistics
+	// Only Admin can access, not Course Creator or Teacher
+	const { userResource } = usersStore()
+	return userResource?.data?.is_admin
 }
 
 const checkIfCanAddProgram = () => {

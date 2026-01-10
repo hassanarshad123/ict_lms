@@ -151,6 +151,7 @@ const liveClasses = createListResource({
 		'time',
 		'date',
 		'duration',
+		'timezone',
 		'attendees',
 		'start_url',
 		'join_url',
