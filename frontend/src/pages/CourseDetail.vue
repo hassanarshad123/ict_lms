@@ -81,6 +81,11 @@
 							:getProgress="course.data.membership ? true : false"
 						/>
 					</div>
+					<CourseRecordings
+						:courseName="course.data.name"
+						:membership="course.data.membership"
+						:instructors="course.data.instructors"
+					/>
 					<CourseReviews
 						:courseName="course.data.name"
 						:avg_rating="course.data.rating"
@@ -109,6 +114,7 @@ import { sessionStore } from '@/stores/session'
 import { useRouter } from 'vue-router'
 import CourseCardOverlay from '@/components/CourseCardOverlay.vue'
 import CourseOutline from '@/components/CourseOutline.vue'
+import CourseRecordings from '@/components/CourseRecordings.vue'
 import CourseReviews from '@/components/CourseReviews.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import CourseInstructors from '@/components/CourseInstructors.vue'

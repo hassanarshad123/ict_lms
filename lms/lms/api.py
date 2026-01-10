@@ -2047,3 +2047,226 @@ def get_upcoming_batches():
 		limit=4,
 		pluck="name",
 	)
+
+
+# ============================================================================
+# Course Recordings API
+# ============================================================================
+
+
+@frappe.whitelist()
+def get_course_recordings(course, start=0, page_length=20):
+	"""
+	Get recordings for a course.
+	Only returns recordings the user has access to view.
+
+	Args:
+		course: Course name
+		start: Pagination start
+		page_length: Number of records to return
+
+	Returns:
+		dict with recordings list and total_count
+	"""
+	if not course:
+		frappe.throw(_("Course is required"))
+
+	# Check access
+	if not has_recording_access(course):
+		frappe.throw(_("You do not have access to view recordings for this course"))
+
+	user = frappe.session.user
+	user_roles = frappe.get_roles(user)
+
+	# Build filters based on role
+	filters = {"course": course}
+
+	# Students only see Uploaded recordings
+	if "LMS Student" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
+		filters["status"] = "Uploaded"
+
+	# Get recordings
+	recordings = frappe.get_all(
+		"LMS Course Recording",
+		filters=filters,
+		fields=[
+			"name",
+			"title",
+			"status",
+			"recorded_on",
+			"duration",
+			"duration_formatted",
+			"thumbnail",
+			"vimeo_player_embed_url",
+			"instructor",
+			"live_class",
+		],
+		order_by="recorded_on desc",
+		start=cint(start),
+		limit_page_length=cint(page_length),
+	)
+
+	# Get instructor names
+	for recording in recordings:
+		if recording.instructor:
+			recording.instructor_name = frappe.db.get_value(
+				"User", recording.instructor, "full_name"
+			)
+
+	# Get total count
+	total_count = frappe.db.count("LMS Course Recording", filters)
+
+	return {
+		"recordings": recordings,
+		"total_count": total_count,
+	}
+
+
+@frappe.whitelist()
+def get_recording_embed(recording_name):
+	"""
+	Get the Vimeo embed URL for a specific recording.
+	Performs access control check before returning URL.
+
+	Args:
+		recording_name: Recording document name
+
+	Returns:
+		dict with embed_url and recording details
+	"""
+	if not frappe.db.exists("LMS Course Recording", recording_name):
+		frappe.throw(_("Recording not found"))
+
+	recording = frappe.get_doc("LMS Course Recording", recording_name)
+
+	# Check access
+	if not has_recording_access(recording.course):
+		frappe.throw(_("You do not have access to view this recording"))
+
+	# Check if recording is available
+	if recording.status != "Uploaded":
+		frappe.throw(_("Recording is not available for viewing"))
+
+	return {
+		"name": recording.name,
+		"title": recording.title,
+		"embed_url": recording.vimeo_player_embed_url,
+		"duration": recording.duration,
+		"duration_formatted": recording.duration_formatted,
+		"recorded_on": recording.recorded_on,
+	}
+
+
+@frappe.whitelist()
+def trigger_recording_upload(live_class):
+	"""
+	Manually trigger upload of a recording from Zoom to Vimeo.
+	Only admins and course creators can trigger this.
+
+	Args:
+		live_class: Live class document name
+	"""
+	frappe.only_for(["Moderator", "Course Creator"])
+
+	if not frappe.db.exists("LMS Live Class", live_class):
+		frappe.throw(_("Live class not found"))
+
+	# Check if recording already exists
+	existing = frappe.db.exists("LMS Course Recording", {"live_class": live_class})
+	if existing:
+		# Re-trigger upload if failed
+		recording = frappe.get_doc("LMS Course Recording", existing)
+		if recording.status == "Failed":
+			recording.status = "Pending"
+			recording.error_message = None
+			recording.save(ignore_permissions=True)
+			frappe.db.commit()
+
+			frappe.enqueue(
+				"lms.lms.doctype.lms_course_recording.recording_upload.process_recording_upload",
+				recording_name=recording.name,
+				queue="long",
+				timeout=3600,
+			)
+			return {"status": "re-triggered", "recording": recording.name}
+		else:
+			return {"status": "exists", "recording": existing}
+
+	# Create new recording
+	from lms.lms.doctype.lms_course_recording.lms_course_recording import process_zoom_recording
+
+	recording_name = process_zoom_recording(live_class)
+	return {"status": "created", "recording": recording_name}
+
+
+@frappe.whitelist()
+def get_recording_status(recording_name):
+	"""
+	Get the current upload/processing status of a recording.
+
+	Args:
+		recording_name: Recording document name
+
+	Returns:
+		dict with status and details
+	"""
+	if not frappe.db.exists("LMS Course Recording", recording_name):
+		frappe.throw(_("Recording not found"))
+
+	recording = frappe.db.get_value(
+		"LMS Course Recording",
+		recording_name,
+		["name", "title", "status", "error_message", "vimeo_player_embed_url"],
+		as_dict=True,
+	)
+
+	# Only show error message to admins/creators
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "Moderator" not in user_roles and "Course Creator" not in user_roles:
+		recording.error_message = None
+
+	return recording
+
+
+def has_recording_access(course):
+	"""
+	Check if current user has access to view recordings for a course.
+	"""
+	user = frappe.session.user
+
+	if user == "Administrator":
+		return True
+
+	user_roles = frappe.get_roles(user)
+
+	# Moderator has full access
+	if "Moderator" in user_roles:
+		return True
+
+	# Course instructor has access
+	if frappe.db.exists(
+		"Course Instructor", {"parent": course, "instructor": user}
+	):
+		return True
+
+	# Teacher assigned to a batch with this course
+	if "Teacher" in user_roles:
+		batches_with_course = frappe.get_all(
+			"Batch Course", filters={"course": course}, pluck="parent"
+		)
+		for batch in batches_with_course:
+			if frappe.db.exists(
+				"Course Instructor",
+				{
+					"parenttype": "LMS Batch",
+					"parent": batch,
+					"instructor": user,
+				},
+			):
+				return True
+
+	# Enrolled student has access
+	if frappe.db.exists("LMS Enrollment", {"course": course, "member": user}):
+		return True
+
+	return False

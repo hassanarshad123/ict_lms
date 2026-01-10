@@ -1,0 +1,135 @@
+{
+ "actions": [],
+ "creation": "2026-01-10 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "auto_upload_enabled",
+  "section_break_credentials",
+  "client_id",
+  "client_secret",
+  "column_break_credentials",
+  "access_token",
+  "section_break_settings",
+  "embed_whitelist",
+  "column_break_settings",
+  "default_folder",
+  "section_break_webhook",
+  "webhook_secret"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "description": "Enable Vimeo integration for course recordings"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_upload_enabled",
+   "fieldtype": "Check",
+   "label": "Auto Upload Recordings",
+   "description": "Automatically upload Zoom recordings to Vimeo when available",
+   "depends_on": "enabled"
+  },
+  {
+   "fieldname": "section_break_credentials",
+   "fieldtype": "Section Break",
+   "label": "API Credentials"
+  },
+  {
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "reqd": 1,
+   "description": "Vimeo App Client ID"
+  },
+  {
+   "fieldname": "client_secret",
+   "fieldtype": "Password",
+   "label": "Client Secret",
+   "reqd": 1,
+   "description": "Vimeo App Client Secret"
+  },
+  {
+   "fieldname": "column_break_credentials",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "reqd": 1,
+   "description": "Vimeo Personal Access Token with upload, edit, and private scopes"
+  },
+  {
+   "fieldname": "section_break_settings",
+   "fieldtype": "Section Break",
+   "label": "Privacy Settings"
+  },
+  {
+   "fieldname": "embed_whitelist",
+   "fieldtype": "Small Text",
+   "label": "Embed Whitelist Domains",
+   "default": "lms.ictpk.cloud",
+   "description": "Comma-separated list of domains allowed to embed videos. Videos will only play on these domains."
+  },
+  {
+   "fieldname": "column_break_settings",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_folder",
+   "fieldtype": "Data",
+   "label": "Default Folder ID",
+   "description": "Vimeo folder ID where recordings will be uploaded (optional)"
+  },
+  {
+   "fieldname": "section_break_webhook",
+   "fieldtype": "Section Break",
+   "label": "Webhook Settings"
+  },
+  {
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Zoom Webhook Secret",
+   "description": "Secret token for validating incoming Zoom webhook requests"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-01-10 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LMS",
+ "name": "LMS Vimeo Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Moderator",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
