@@ -46,7 +46,21 @@ class LMSCourseRecording(Document):
 
 	def enforce_role_permissions(self, action):
 		"""Enforce role-based permissions for recording management"""
+		# Skip permission check for system/background operations
+		if frappe.flags.in_install or frappe.flags.in_migrate:
+			return
+
+		# Skip if called with ignore_permissions (e.g., from background jobs via vimeo_processor)
+		if self.flags.get("ignore_permissions"):
+			return
+
 		if frappe.session.user == "Administrator":
+			return
+
+		# Guest user in background job context - allow if processing recordings
+		if frappe.session.user == "Guest":
+			# This happens when Vimeo webhook triggers background job
+			# The job runs as Guest but should be allowed to create recordings
 			return
 
 		user_roles = frappe.get_roles(frappe.session.user)
