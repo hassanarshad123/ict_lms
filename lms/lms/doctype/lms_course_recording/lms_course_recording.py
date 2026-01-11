@@ -136,90 +136,14 @@ def has_recording_access(recording_name, user=None):
 
 
 @frappe.whitelist()
-def check_for_new_recordings():
+def trigger_vimeo_poll():
 	"""
-	Scheduled job to check for new Zoom recordings.
-	Acts as fallback if webhook fails.
-	Runs hourly.
+	Manually trigger Vimeo folder polling for new recordings.
+	Only available to admins.
 	"""
-	from lms.lms.doctype.lms_vimeo_settings.lms_vimeo_settings import is_vimeo_enabled
+	if not frappe.has_permission("LMS Course Recording", "write"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
-	if not is_vimeo_enabled():
-		return
-
-	# Find live classes with cloud recording that ended recently
-	# and don't have a recording entry yet
-	live_classes = frappe.get_all(
-		"LMS Live Class",
-		filters={
-			"auto_recording": "Cloud",
-			"date": ["<", frappe.utils.today()],
-		},
-		fields=["name", "title", "date", "uuid", "batch_name", "host"],
-	)
-
-	for live_class in live_classes:
-		# Skip if recording already exists
-		if frappe.db.exists(
-			"LMS Course Recording", {"live_class": live_class.name}
-		):
-			continue
-
-		# Skip if no UUID (meeting never started)
-		if not live_class.uuid:
-			continue
-
-		# Try to fetch and process recording
-		try:
-			process_zoom_recording(live_class.name)
-		except Exception as e:
-			frappe.log_error(
-				f"Failed to process recording for live class {live_class.name}: {str(e)}",
-				"Recording Processing Error",
-			)
-
-
-def process_zoom_recording(live_class_name):
-	"""
-	Fetch recording from Zoom and create LMS Course Recording.
-	Enqueues upload job to Vimeo.
-	"""
-	live_class = frappe.get_doc("LMS Live Class", live_class_name)
-
-	if not live_class.uuid:
-		frappe.throw(_("Live class has no meeting UUID"))
-
-	# Get batch and course info
-	batch = frappe.get_doc("LMS Batch", live_class.batch_name)
-	course = None
-
-	# Get the first course from batch (recordings are linked at course level)
-	batch_courses = frappe.get_all(
-		"Batch Course", filters={"parent": batch.name}, pluck="course", limit=1
-	)
-	if batch_courses:
-		course = batch_courses[0]
-	else:
-		frappe.throw(_("Batch {0} has no associated courses").format(batch.name))
-
-	# Create recording entry
-	recording = frappe.new_doc("LMS Course Recording")
-	recording.title = live_class.title
-	recording.course = course
-	recording.live_class = live_class_name
-	recording.batch = batch.name
-	recording.recorded_on = live_class.date
-	recording.instructor = live_class.host
-	recording.zoom_meeting_uuid = live_class.uuid
-	recording.status = "Pending"
-	recording.insert(ignore_permissions=True)
-
-	# Enqueue upload job
-	frappe.enqueue(
-		"lms.lms.doctype.lms_course_recording.recording_upload.process_recording_upload",
-		recording_name=recording.name,
-		queue="long",
-		timeout=3600,  # 1 hour timeout for large files
-	)
-
-	return recording.name
+	from lms.lms.doctype.lms_course_recording.vimeo_processor import poll_vimeo_folder
+	poll_vimeo_folder()
+	return {"status": "success", "message": "Vimeo polling triggered"}

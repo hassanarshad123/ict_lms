@@ -121,12 +121,19 @@ scheduler_events = {
 	"all": [
 		"lms.sqlite.build_index_in_background",
 	],
+	"cron": {
+		# Poll Vimeo folder for new recordings (fallback for webhooks)
+		"*/15 * * * *": [
+			"lms.lms.doctype.lms_course_recording.vimeo_processor.poll_vimeo_folder",
+		],
+	},
 	"hourly": [
 		"lms.lms.doctype.lms_certificate_request.lms_certificate_request.schedule_evals",
 		"lms.lms.api.update_course_statistics",
 		"lms.lms.doctype.lms_certificate_request.lms_certificate_request.mark_eval_as_completed",
 		"lms.lms.doctype.lms_live_class.lms_live_class.update_attendance",
-		"lms.lms.doctype.lms_course_recording.lms_course_recording.check_for_new_recordings",
+		# Check if processing recordings have completed transcoding
+		"lms.lms.doctype.lms_course_recording.vimeo_processor.check_processing_recordings",
 	],
 	"daily": [
 		"lms.job.doctype.job_opportunity.job_opportunity.update_job_openings",

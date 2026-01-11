@@ -5,7 +5,6 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
-  "auto_upload_enabled",
   "section_break_credentials",
   "client_id",
   "client_secret",
@@ -16,7 +15,7 @@
   "column_break_settings",
   "default_folder",
   "section_break_webhook",
-  "webhook_secret"
+  "vimeo_webhook_secret"
  ],
  "fields": [
   {
@@ -24,15 +23,7 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled",
-   "description": "Enable Vimeo integration for course recordings"
-  },
-  {
-   "default": "1",
-   "fieldname": "auto_upload_enabled",
-   "fieldtype": "Check",
-   "label": "Auto Upload Recordings",
-   "description": "Automatically upload Zoom recordings to Vimeo when available",
-   "depends_on": "enabled"
+   "description": "Enable Vimeo integration for course recordings (uses native Vimeo-Zoom integration)"
   },
   {
    "fieldname": "section_break_credentials",
@@ -92,10 +83,10 @@
    "label": "Webhook Settings"
   },
   {
-   "fieldname": "webhook_secret",
+   "fieldname": "vimeo_webhook_secret",
    "fieldtype": "Password",
-   "label": "Zoom Webhook Secret",
-   "description": "Secret token for validating incoming Zoom webhook requests"
+   "label": "Vimeo Webhook Secret",
+   "description": "Secret token for validating incoming Vimeo webhook requests"
   }
  ],
  "index_web_pages_for_search": 1,

@@ -2219,45 +2219,45 @@ def get_recording_embed(recording_name):
 
 
 @frappe.whitelist()
-def trigger_recording_upload(live_class):
+def trigger_recording_sync(live_class=None):
 	"""
-	Manually trigger upload of a recording from Zoom to Vimeo.
-	Only admins and course creators can trigger this.
+	Manually trigger sync of recordings from Vimeo.
+
+	With the native Vimeo-Zoom integration, recordings are automatically
+	uploaded to Vimeo. This function triggers a check for new recordings.
 
 	Args:
-		live_class: Live class document name
+		live_class: Optional live class document name to check
 	"""
 	frappe.only_for(["Moderator", "Course Creator"])
 
-	if not frappe.db.exists("LMS Live Class", live_class):
-		frappe.throw(_("Live class not found"))
+	# If a specific live class is provided, check if recording exists
+	if live_class:
+		if not frappe.db.exists("LMS Live Class", live_class):
+			frappe.throw(_("Live class not found"))
 
-	# Check if recording already exists
-	existing = frappe.db.exists("LMS Course Recording", {"live_class": live_class})
-	if existing:
-		# Re-trigger upload if failed
-		recording = frappe.get_doc("LMS Course Recording", existing)
-		if recording.status == "Failed":
-			recording.status = "Pending"
-			recording.error_message = None
-			recording.save(ignore_permissions=True)
-			frappe.db.commit()
+		existing = frappe.db.exists("LMS Course Recording", {"live_class": live_class})
+		if existing:
+			recording = frappe.get_doc("LMS Course Recording", existing)
+			return {
+				"status": "exists",
+				"recording": existing,
+				"vimeo_status": recording.status,
+			}
 
-			frappe.enqueue(
-				"lms.lms.doctype.lms_course_recording.recording_upload.process_recording_upload",
-				recording_name=recording.name,
-				queue="long",
-				timeout=3600,
-			)
-			return {"status": "re-triggered", "recording": recording.name}
-		else:
-			return {"status": "exists", "recording": existing}
+	# Trigger Vimeo folder poll to check for new recordings
+	from lms.lms.doctype.lms_course_recording.vimeo_processor import poll_vimeo_folder
 
-	# Create new recording
-	from lms.lms.doctype.lms_course_recording.lms_course_recording import process_zoom_recording
+	frappe.enqueue(
+		poll_vimeo_folder,
+		queue="default",
+		timeout=300,
+	)
 
-	recording_name = process_zoom_recording(live_class)
-	return {"status": "created", "recording": recording_name}
+	return {
+		"status": "sync_triggered",
+		"message": "Vimeo sync has been triggered. New recordings will appear shortly if available.",
+	}
 
 
 @frappe.whitelist()
