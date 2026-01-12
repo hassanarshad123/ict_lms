@@ -2111,6 +2111,552 @@ def get_upcoming_batches():
 
 
 # ============================================================================
+# n8n-based Vimeo Integration API
+# ============================================================================
+
+
+def _find_live_class_for_vimeo_video(video_title, video_description, created_time):
+	"""
+	Find matching Live Class for a Vimeo video processed by n8n.
+
+	This is a wrapper around the existing find_live_class() function in vimeo_processor,
+	adapted for the n8n integration where title is already cleaned and meeting_id extracted.
+
+	Matching strategy (4-level cascade):
+	1. Match by meeting_id in description (most reliable)
+	2. Match by title + date exact
+	3. Match by title contains + date exact
+	4. Match by title + date within ±2 hours (timezone tolerance)
+
+	Args:
+		video_title: Clean title from n8n (timestamp already removed)
+		video_description: Description containing meeting ID
+		created_time: Video creation datetime (datetime object or None)
+
+	Returns:
+		tuple: (live_class_doc, match_method) or (None, None)
+	"""
+	# Strategy 1: Match by meeting_id if present in description
+	if video_description:
+		import re
+		meeting_id_match = re.search(r'Meeting ID[:\s]+(\d{10,12})', video_description, re.IGNORECASE)
+		if meeting_id_match:
+			meeting_id = meeting_id_match.group(1)
+			live_class = frappe.db.get_value(
+				"LMS Live Class",
+				{"meeting_id": meeting_id},
+				["name", "batch_name", "host", "title", "date", "time", "course"],
+				as_dict=True,
+			)
+			if live_class:
+				# Get course from batch if not directly set
+				if not live_class.get("course"):
+					live_class["course"] = get_course_from_batch(live_class.batch_name)
+				frappe.logger().info(f"[n8n Vimeo] Matched by meeting_id: {meeting_id}")
+				return (frappe.get_doc("LMS Live Class", live_class.name), "meeting_id")
+
+	# If no created_time provided, can't do date-based matching
+	if not created_time:
+		frappe.logger().warning("[n8n Vimeo] No created_time provided, cannot perform date-based matching")
+		return (None, None)
+
+	# Convert created_time to date for matching
+	if isinstance(created_time, str):
+		from datetime import datetime
+		try:
+			created_time = get_datetime(created_time)
+		except Exception as e:
+			frappe.logger().error(f"[n8n Vimeo] Failed to parse created_time: {e}")
+			return (None, None)
+
+	recording_date = created_time.date() if hasattr(created_time, 'date') else created_time
+
+	# Strategy 2: Exact title match + exact date
+	live_class = frappe.db.get_value(
+		"LMS Live Class",
+		{"title": video_title, "date": recording_date},
+		["name", "batch_name", "host", "title", "date", "time", "course"],
+		as_dict=True,
+	)
+
+	if live_class:
+		if not live_class.get("course"):
+			live_class["course"] = get_course_from_batch(live_class.batch_name)
+		frappe.logger().info(f"[n8n Vimeo] Matched by exact title + date")
+		return (frappe.get_doc("LMS Live Class", live_class.name), "title_and_date")
+
+	# Strategy 3: Title contains + exact date
+	all_classes_on_date = frappe.get_all(
+		"LMS Live Class",
+		filters={"date": recording_date},
+		fields=["name", "batch_name", "host", "title", "date", "time", "course"],
+	)
+
+	for lc in all_classes_on_date:
+		# Check if the live class title is contained in the video title or vice versa
+		if video_title.lower() in lc.title.lower() or lc.title.lower() in video_title.lower():
+			if not lc.get("course"):
+				lc["course"] = get_course_from_batch(lc.batch_name)
+			frappe.logger().info(f"[n8n Vimeo] Matched by title contains + date")
+			return (frappe.get_doc("LMS Live Class", lc.name), "title_contains")
+
+	# Strategy 4: Exact title + date within ±2 hours (for timezone edge cases)
+	date_before = add_days(recording_date, -1)
+	date_after = add_days(recording_date, 1)
+
+	live_classes_nearby = frappe.get_all(
+		"LMS Live Class",
+		filters={
+			"title": video_title,
+			"date": ["between", [date_before, date_after]],
+		},
+		fields=["name", "batch_name", "host", "title", "date", "time", "course"],
+	)
+
+	if live_classes_nearby:
+		lc = live_classes_nearby[0]
+		if not lc.get("course"):
+			lc["course"] = get_course_from_batch(lc.batch_name)
+		frappe.logger().info(f"[n8n Vimeo] Matched by title + date within ±1 day")
+		return (frappe.get_doc("LMS Live Class", lc.name), "title_and_date_nearby")
+
+	frappe.logger().info(f"[n8n Vimeo] No match found for title='{video_title}', date={recording_date}")
+	return (None, None)
+
+
+def get_course_from_batch(batch_name):
+	"""Get the first course from a batch."""
+	if not batch_name:
+		return None
+
+	courses = frappe.get_all(
+		"Batch Course",
+		filters={"parent": batch_name},
+		pluck="course",
+		limit=1,
+	)
+
+	return courses[0] if courses else None
+
+
+def create_lesson_from_recording(live_class_name):
+	"""
+	Auto-create a lesson in the course from a live class recording.
+
+	This function:
+	1. Finds the course(s) associated with the live class
+	2. Finds or creates a "Recordings" chapter in each course
+	3. Creates a lesson with the recording video embedded
+
+	Args:
+		live_class_name: Name of the LMS Live Class document
+
+	Returns:
+		list: Names of created lessons
+	"""
+	# Get live class details
+	live_class = frappe.get_doc("LMS Live Class", live_class_name)
+
+	if not live_class.recording_url:
+		frappe.logger().warning(f"[n8n Vimeo] Live class {live_class_name} has no recording_url")
+		return []
+
+	# Find associated batches and courses
+	batches = frappe.get_all(
+		"LMS Batch",
+		filters={"name": live_class.batch_name},
+		fields=["name"],
+	)
+
+	if not batches:
+		frappe.logger().warning(f"[n8n Vimeo] No batch found for live class {live_class_name}")
+		return []
+
+	# Get all courses from the batch
+	courses = frappe.get_all(
+		"Batch Course",
+		filters={"parent": live_class.batch_name},
+		pluck="course",
+	)
+
+	if not courses:
+		frappe.logger().warning(f"[n8n Vimeo] No courses found for batch {live_class.batch_name}")
+		return []
+
+	created_lessons = []
+
+	# Create lesson in each course
+	for course_name in courses:
+		try:
+			# Find or create "Recordings" chapter
+			recordings_chapter = find_or_create_recordings_chapter(course_name)
+
+			# Check if lesson already exists for this live class
+			existing_lesson = frappe.db.exists(
+				"Course Lesson",
+				{
+					"title": live_class.title,
+					"chapter": recordings_chapter.name,
+				}
+			)
+
+			if existing_lesson:
+				frappe.logger().info(f"[n8n Vimeo] Lesson already exists: {existing_lesson}")
+				# Update the existing lesson with the recording URL
+				lesson_doc = frappe.get_doc("Course Lesson", existing_lesson)
+				lesson_doc.youtube = live_class.recording_url
+				lesson_doc.save(ignore_permissions=True)
+				created_lessons.append(existing_lesson)
+				continue
+
+			# Create new lesson
+			lesson = frappe.new_doc("Course Lesson")
+			lesson.title = live_class.title
+			lesson.chapter = recordings_chapter.name
+			lesson.course = course_name
+			lesson.include_in_preview = 0
+
+			# Set the video URL (Vimeo player embed URL)
+			lesson.youtube = live_class.recording_url
+
+			# Set body content with video description
+			lesson.body = f"""
+<div class="embed-responsive embed-responsive-16by9">
+	<iframe class="embed-responsive-item" src="{live_class.recording_url}" allowfullscreen></iframe>
+</div>
+
+<p><strong>Recorded on:</strong> {format_date(live_class.date, 'medium')}</p>
+{f'<p><strong>Duration:</strong> {live_class.duration} minutes</p>' if live_class.duration else ''}
+{f'<p>{live_class.description}</p>' if live_class.description else ''}
+"""
+
+			lesson.insert(ignore_permissions=True)
+
+			# Add lesson to chapter
+			add_lesson_to_chapter(recordings_chapter, lesson.name)
+
+			frappe.logger().info(f"[n8n Vimeo] Created lesson {lesson.name} in chapter {recordings_chapter.name}")
+			created_lessons.append(lesson.name)
+
+		except Exception as e:
+			frappe.log_error(
+				f"Failed to create lesson for live class {live_class_name} in course {course_name}: {str(e)}",
+				"n8n Vimeo Lesson Creation Error"
+			)
+
+	frappe.db.commit()
+	return created_lessons
+
+
+def find_or_create_recordings_chapter(course_name):
+	"""
+	Find or create a "Recordings" chapter in a course.
+
+	Args:
+		course_name: Name of the LMS Course
+
+	Returns:
+		Course Chapter document
+	"""
+	# Look for existing "Recordings" chapter
+	existing_chapter = frappe.db.get_value(
+		"Course Chapter",
+		{"course": course_name, "title": "Recordings"},
+		["name"],
+	)
+
+	if existing_chapter:
+		return frappe.get_doc("Course Chapter", existing_chapter)
+
+	# Create new "Recordings" chapter
+	chapter = frappe.new_doc("Course Chapter")
+	chapter.title = "Recordings"
+	chapter.course = course_name
+	chapter.description = "Live class recordings from this course"
+	chapter.insert(ignore_permissions=True)
+
+	# Add chapter reference to course
+	chapter_ref = frappe.new_doc("Chapter Reference")
+	chapter_ref.chapter = chapter.name
+	chapter_ref.parent = course_name
+	chapter_ref.parenttype = "LMS Course"
+	chapter_ref.parentfield = "chapters"
+
+	# Set idx to last position
+	existing_refs = frappe.get_all(
+		"Chapter Reference",
+		filters={"parent": course_name},
+		order_by="idx desc",
+		limit=1,
+		pluck="idx",
+	)
+	chapter_ref.idx = (existing_refs[0] + 1) if existing_refs else 1
+
+	chapter_ref.insert(ignore_permissions=True)
+
+	frappe.logger().info(f"[n8n Vimeo] Created Recordings chapter in course {course_name}")
+	return chapter
+
+
+def add_lesson_to_chapter(chapter, lesson_name):
+	"""
+	Add a lesson reference to a chapter.
+
+	Args:
+		chapter: Course Chapter document
+		lesson_name: Name of the Course Lesson
+	"""
+	# Check if lesson reference already exists
+	existing_ref = frappe.db.exists(
+		"Lesson Reference",
+		{"parent": chapter.name, "lesson": lesson_name}
+	)
+
+	if existing_ref:
+		return
+
+	# Get last idx
+	existing_refs = frappe.get_all(
+		"Lesson Reference",
+		filters={"parent": chapter.name},
+		order_by="idx desc",
+		limit=1,
+		pluck="idx",
+	)
+
+	# Create lesson reference
+	lesson_ref = frappe.new_doc("Lesson Reference")
+	lesson_ref.lesson = lesson_name
+	lesson_ref.parent = chapter.name
+	lesson_ref.parenttype = "Course Chapter"
+	lesson_ref.parentfield = "lessons"
+	lesson_ref.idx = (existing_refs[0] + 1) if existing_refs else 1
+	lesson_ref.insert(ignore_permissions=True)
+
+
+def _validate_vimeo_n8n_payload(payload):
+	"""
+	Validate incoming payload from n8n for Vimeo recordings.
+
+	Args:
+		payload (dict): JSON payload from n8n
+
+	Returns:
+		list: List of validation error messages (empty if valid)
+	"""
+	errors = []
+
+	# Required: video_url
+	video_url = payload.get("video_url")
+	if not video_url:
+		errors.append("video_url is required")
+	elif not isinstance(video_url, str) or "vimeo.com" not in video_url.lower():
+		errors.append("video_url must be a valid Vimeo URL")
+
+	# Required: video_id
+	video_id = payload.get("video_id")
+	if not video_id:
+		errors.append("video_id is required")
+	elif not str(video_id).isdigit():
+		errors.append("video_id must be numeric")
+
+	# Optional: created_time (validate if provided)
+	created_time = payload.get("created_time")
+	if created_time:
+		try:
+			if isinstance(created_time, (int, float)):
+				# Unix timestamp - validate range
+				from datetime import datetime
+				datetime.fromtimestamp(created_time)
+			else:
+				# ISO format string - use Frappe's date parser
+				get_datetime(created_time)
+		except Exception as e:
+			errors.append(f"created_time is invalid: {str(e)}")
+
+	# Optional: meeting_id (validate if provided)
+	meeting_id = payload.get("meeting_id")
+	if meeting_id:
+		meeting_id_str = str(meeting_id)
+		if not (meeting_id_str.isdigit() and 10 <= len(meeting_id_str) <= 12):
+			errors.append("meeting_id must be a 10-12 digit numeric string")
+
+	return errors
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def process_vimeo_recording():
+	"""
+	Simplified API endpoint for n8n-processed Vimeo recordings.
+
+	Architecture:
+		Vimeo → n8n webhook → n8n transforms → LMS API (this endpoint)
+
+	n8n handles:
+		- Vimeo webhook signature verification
+		- Vimeo API enrichment for metadata
+		- Title cleaning (removes Vimeo timestamp suffix)
+		- Meeting ID extraction from description
+
+	LMS handles:
+		- Request validation
+		- Live Class matching (4-level cascade)
+		- Recording URL update
+		- Lesson creation
+
+	Expected payload from n8n:
+		{
+			"video_url": "https://player.vimeo.com/video/123",
+			"video_id": "123",
+			"created_time": "2026-01-11T15:46:00Z" or 1736609160,
+			"meeting_id": "12345678901",  // optional
+			"title": "Live Class on Python",  // optional, already cleaned
+			"description": "Meeting info...",  // optional
+			"duration": 3600  // optional, seconds
+		}
+
+	Returns:
+		Success response (200):
+			{
+				"status": "success",
+				"message": "Recording updated for LMS-LC-00123",
+				"live_class": "LMS-LC-00123",
+				"lesson_created": true,
+				"matched_by": "meeting_id"
+			}
+
+		No match response (200):
+			{
+				"status": "success",
+				"message": "No matching live class found",
+				"matched": false
+			}
+
+		Error response (200 with error status):
+			{
+				"status": "error",
+				"message": "video_url is required",
+				"code": "VALIDATION_ERROR"
+			}
+	"""
+	try:
+		# Disable CSRF for external n8n calls
+		frappe.flags.ignore_csrf = True
+
+		# Parse request body
+		if frappe.request.data:
+			request_data = frappe.request.data
+			if isinstance(request_data, bytes):
+				request_data = request_data.decode('utf-8')
+			payload = json.loads(request_data)
+		else:
+			frappe.logger().error("[n8n Vimeo] No data received in request")
+			return {
+				"status": "error",
+				"message": "No data received",
+				"code": "NO_DATA"
+			}
+
+		frappe.logger().info(f"[n8n Vimeo] Received payload: {json.dumps(payload, indent=2)}")
+
+		# Validate payload
+		validation_errors = _validate_vimeo_n8n_payload(payload)
+		if validation_errors:
+			error_msg = "; ".join(validation_errors)
+			frappe.logger().error(f"[n8n Vimeo] Validation failed: {error_msg}")
+			return {
+				"status": "error",
+				"message": error_msg,
+				"code": "VALIDATION_ERROR"
+			}
+
+		# Extract and normalize data
+		video_url = payload.get("video_url")
+		video_id = str(payload.get("video_id"))
+		title = payload.get("title", "")
+		description = payload.get("description", "")
+		duration = payload.get("duration", 0)
+
+		# Parse created_time (handle both ISO and Unix formats)
+		created_time = payload.get("created_time")
+		if created_time:
+			if isinstance(created_time, (int, float)):
+				# Unix timestamp
+				from datetime import datetime
+				created_time = datetime.fromtimestamp(created_time)
+				frappe.logger().info(f"[n8n Vimeo] Converted Unix timestamp to: {created_time}")
+			else:
+				# ISO format - use Frappe's date parser
+				created_time = get_datetime(created_time)
+				frappe.logger().info(f"[n8n Vimeo] Parsed ISO timestamp: {created_time}")
+		else:
+			frappe.logger().warning("[n8n Vimeo] No created_time provided, matching may be less accurate")
+
+		# Log incoming video info
+		frappe.logger().info(f"[n8n Vimeo] Processing video: ID={video_id}, URL={video_url}, Title='{title}'")
+
+		# Find matching Live Class using the wrapper function
+		live_class, match_method = _find_live_class_for_vimeo_video(
+			video_title=title,
+			video_description=description,
+			created_time=created_time
+		)
+
+		if not live_class:
+			frappe.logger().info("[n8n Vimeo] No matching Live Class found")
+			return {
+				"status": "success",
+				"message": "No matching live class found (might not be an LMS recording)",
+				"matched": False
+			}
+
+		frappe.logger().info(f"[n8n Vimeo] Matched Live Class: {live_class.name} using {match_method}")
+
+		# Update Live Class with recording URL
+		live_class.recording_url = video_url
+		live_class.recording_available = 1
+		live_class.save(ignore_permissions=True)
+		frappe.logger().info(f"[n8n Vimeo] Updated recording URL for {live_class.name}")
+
+		# Create lesson from recording
+		lesson_created = False
+		try:
+			lessons = create_lesson_from_recording(live_class.name)
+			lesson_created = len(lessons) > 0
+			frappe.logger().info(f"[n8n Vimeo] Created/updated {len(lessons)} lesson(s) for {live_class.name}")
+		except Exception as e:
+			frappe.logger().warning(f"[n8n Vimeo] Could not create lesson: {str(e)}")
+
+		# Commit changes to database
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"message": f"Recording updated with Vimeo URL for {live_class.name}",
+			"live_class": live_class.name,
+			"video_url": video_url,
+			"lesson_created": lesson_created,
+			"matched_by": match_method
+		}
+
+	except json.JSONDecodeError as e:
+		frappe.logger().error(f"[n8n Vimeo] JSON decode error: {str(e)}")
+		return {
+			"status": "error",
+			"message": "Invalid JSON in request body",
+			"code": "JSON_ERROR"
+		}
+	except Exception as e:
+		frappe.logger().error(f"[n8n Vimeo] Unexpected error: {str(e)}")
+		frappe.log_error(title="n8n Vimeo Recording Error", message=frappe.get_traceback())
+		return {
+			"status": "error",
+			"message": "Error processing recording",
+			"code": "PROCESSING_ERROR"
+		}
+
+
+# ============================================================================
 # Course Recordings API
 # ============================================================================
 
