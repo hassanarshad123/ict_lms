@@ -1,0 +1,78 @@
+# Notification Management Endpoints
+
+/lms.lms.api.get_notifications:
+  get:
+    summary: Get notifications
+    description: |
+      Get notifications for the current user based on filters.
+      Supports filtering by read status, type, etc.
+    tags:
+      - Notifications
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: filters
+        in: query
+        required: true
+        description: JSON filter object
+        schema:
+          type: string
+          example: '{"read": 0, "for_user": "user@example.com"}'
+    responses:
+      '200':
+        description: List of notifications
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  subject:
+                    type: string
+                  from_user:
+                    type: string
+                  full_name:
+                    type: string
+                    description: From user's full name
+                  user_image:
+                    type: string
+                    description: From user's profile image
+                  link:
+                    type: string
+                    description: Link to related content
+                  read:
+                    type: boolean
+
+/lms.lms.api.mark_as_read:
+  post:
+    summary: Mark notification as read
+    description: Mark a specific notification as read.
+    tags:
+      - Notifications
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: name
+        in: query
+        required: true
+        schema:
+          type: string
+          description: Notification Log document ID
+    responses:
+      '200':
+        description: Notification marked as read
+
+/lms.lms.api.mark_all_as_read:
+  post:
+    summary: Mark all notifications as read
+    description: Mark all unread notifications for the current user as read.
+    tags:
+      - Notifications
+    security:
+      - SessionAuth: []
+    responses:
+      '200':
+        description: All notifications marked as read

@@ -62,6 +62,38 @@ tags:
     description: Quiz submissions and assessments
   - name: Authentication
     description: User authentication and registration
+  - name: Users
+    description: User management and profiles
+  - name: Jobs
+    description: Job opportunities and applications
+  - name: Certificates
+    description: Certificate management and evaluations
+  - name: Programs
+    description: Course program management
+  - name: Notifications
+    description: Notification management
+  - name: Statistics
+    description: Dashboard statistics and charts
+  - name: Settings
+    description: LMS settings and configuration
+  - name: Media
+    description: File and media management
+  - name: Utilities
+    description: Utility endpoints
+  - name: Dashboard
+    description: Dashboard data endpoints
+  - name: Payments
+    description: Payment processing
+  - name: Discussions
+    description: Discussion forums
+  - name: Programming Exercises
+    description: Programming exercise submissions
+  - name: Badges
+    description: Badge management
+  - name: SEO
+    description: SEO and meta tags
+  - name: Documentation
+    description: API documentation
 
 paths:
   # Course Management
@@ -134,89 +166,191 @@ paths:
 
   # Authentication & User
   /lms.lms.api.get_user_info:
-    get:
-      summary: Get current user information
-      description: Returns information about the currently logged-in user, including roles and permissions.
-      tags:
-        - Authentication
-      security:
-        - SessionAuth: []
-        - {}
-      responses:
-        '200':
-          description: User information retrieved successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserInfo'
-              example:
-                name: "user@example.com"
-                email: "user@example.com"
-                full_name: "John Doe"
-                user_image: "/files/user.jpg"
-                is_admin: false
-                is_moderator: false
-                is_course_creator: true
-                is_teacher: false
-                is_student: true
-                roles: ["Course Creator", "LMS Student"]
-
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_user_info'
   /lms.lms.user.sign_up:
-    post:
-      summary: Register new user
-      description: Create a new user account in the LMS.
-      tags:
-        - Authentication
-      security:
-        - {}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-                - full_name
-              properties:
-                email:
-                  type: string
-                  format: email
-                  description: User email address
-                full_name:
-                  type: string
-                  description: User's full name
-                verify_terms:
-                  type: boolean
-                  description: Terms and conditions acceptance
-                user_category:
-                  type: string
-                  description: User category/role
-            example:
-              email: "newuser@example.com"
-              full_name: "Jane Smith"
-              verify_terms: true
-              user_category: "Student"
-      responses:
-        '200':
-          description: User registered successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status_code:
-                    type: integer
-                    example: 200
-                  message:
-                    type: string
-                    example: "Registration successful"
-        '400':
-          description: Registration failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+    $ref: './paths/users.yaml#/~1lms.lms.user.sign_up'
+  /lms.lms.api.get_translations:
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_translations'
+  /lms.lms.api.get_profile_details:
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_profile_details'
+  /lms.lms.api.get_members:
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_members'
+  /lms.lms.api.get_all_users:
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_all_users'
+  /lms.lms.api.get_streak_info:
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_streak_info'
+  /lms.lms.api.get_heatmap_data:
+    $ref: './paths/users.yaml#/~1lms.lms.api.get_heatmap_data'
+  /lms.lms.api.get_roles:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_roles'
+  /lms.lms.api.save_role:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.save_role'
+  /lms.lms.api.add_an_evaluator:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.add_an_evaluator'
+  /lms.lms.api.delete_evaluator:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.delete_evaluator'
+  /lms.lms.api.get_evaluator_details:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_evaluator_details'
+
+  # Jobs
+  /lms.lms.api.get_job_details:
+    $ref: './paths/jobs.yaml#/~1lms.lms.api.get_job_details'
+  /lms.lms.api.get_job_opportunities:
+    $ref: './paths/jobs.yaml#/~1lms.lms.api.get_job_opportunities'
+
+  # Certificates
+  /lms.lms.api.get_certified_participants:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.get_certified_participants'
+  /lms.lms.api.get_count_of_certified_members:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.get_count_of_certified_members'
+  /lms.lms.api.get_certification_categories:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.get_certification_categories'
+  /lms.lms.api.get_certification_details:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.get_certification_details'
+  /lms.lms.api.save_certificate_details:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.save_certificate_details'
+  /lms.lms.api.save_evaluation_details:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.save_evaluation_details'
+  /lms.lms.api.get_admin_evals:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.get_admin_evals'
+  /lms.lms.api.cancel_evaluation:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.cancel_evaluation'
+  /lms.lms.api.get_upcoming_evals:
+    $ref: './paths/certificates.yaml#/~1lms.lms.api.get_upcoming_evals'
+
+  # Programs
+  /lms.lms.utils.get_programs:
+    $ref: './paths/programs.yaml#/~1lms.lms.utils.get_programs'
+  /lms.lms.utils.get_program_details:
+    $ref: './paths/programs.yaml#/~1lms.lms.utils.get_program_details'
+  /lms.lms.utils.enroll_in_program:
+    $ref: './paths/programs.yaml#/~1lms.lms.utils.enroll_in_program'
+
+  # Notifications
+  /lms.lms.api.get_notifications:
+    $ref: './paths/notifications.yaml#/~1lms.lms.api.get_notifications'
+  /lms.lms.api.mark_as_read:
+    $ref: './paths/notifications.yaml#/~1lms.lms.api.mark_as_read'
+  /lms.lms.api.mark_all_as_read:
+    $ref: './paths/notifications.yaml#/~1lms.lms.api.mark_all_as_read'
+
+  # Recordings (additional endpoints)
+  /lms.lms.api.get_recording_status:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_recording_status'
+  /lms.lms.api.process_vimeo_recording:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.process_vimeo_recording'
+
+  # Batches (additional endpoints)
+  /lms.lms.api.get_batch_courses:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_batch_courses'
+  /lms.lms.api.get_batch_students:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_batch_students'
+  /lms.lms.api.get_announcements:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_announcements'
+
+  # Courses (additional endpoints)
+  /lms.lms.api.update_chapter_index:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.update_chapter_index'
+  /lms.lms.api.delete_chapter:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.delete_chapter'
+  /lms.lms.api.upsert_chapter:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.upsert_chapter'
+
+  # Lessons (additional endpoints)
+  /lms.lms.api.get_lesson_creation_details:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_lesson_creation_details'
+  /lms.lms.api.update_lesson_index:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.update_lesson_index'
+  /lms.lms.api.track_video_watch_duration:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.track_video_watch_duration'
+
+  # Quizzes (additional endpoints)
+  /lms.lms.api.get_question_details:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_question_details'
+
+  # Payments
+  /lms.lms.api.validate_billing_access:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.validate_billing_access'
+  /lms.lms.payments.get_payment_link:
+    $ref: './paths/misc.yaml#/~1lms.lms.payments.get_payment_link'
+  /lms.lms.utils.get_order_summary:
+    $ref: './paths/misc.yaml#/~1lms.lms.utils.get_order_summary'
+  /lms.lms.api.get_payment_gateway_details:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_payment_gateway_details'
+  /lms.lms.api.get_new_gateway_fields:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_new_gateway_fields'
+
+  # Dashboard
+  /lms.lms.api.get_my_courses:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_my_courses'
+  /lms.lms.api.get_my_batches:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_my_batches'
+  /lms.lms.api.get_created_courses:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_created_courses'
+  /lms.lms.api.get_created_batches:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_created_batches'
+  /lms.lms.api.get_my_live_classes:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_my_live_classes'
+  /lms.lms.api.get_admin_live_classes:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_admin_live_classes'
+
+  # Statistics
+  /lms.lms.api.get_chart_details:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_chart_details'
+  /lms.lms.api.get_chart_data:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_chart_data'
+  /lms.lms.api.get_course_completion_data:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_course_completion_data'
+
+  # Settings
+  /lms.lms.api.get_branding:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_branding'
+  /lms.lms.api.get_sidebar_settings:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_sidebar_settings'
+  /lms.lms.api.update_sidebar_item:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.update_sidebar_item'
+  /lms.lms.api.delete_sidebar_item:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.delete_sidebar_item'
+  /lms.lms.api.get_lms_settings:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_lms_settings'
+
+  # Media
+  /lms.lms.api.get_unsplash_photos:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_unsplash_photos'
+  /lms.lms.api.get_file_info:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_file_info'
+
+  # Utilities
+  /lms.lms.api.get_count:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_count'
+  /lms.lms.api.get_categories:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_categories'
+  /lms.lms.api.delete_documents:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.delete_documents'
+
+  # Discussions
+  /lms.lms.api.get_discussion_topics:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_discussion_topics'
+  /lms.lms.api.get_discussion_replies:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_discussion_replies'
+
+  # Programming Exercises
+  /lms.lms.api.create_programming_exercise_submission:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.create_programming_exercise_submission'
+
+  # Badges
+  /lms.lms.api.get_assigned_badges:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_assigned_badges'
+
+  # SEO
+  /lms.lms.api.get_meta_info:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_meta_info'
+  /lms.lms.api.update_meta_info:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.update_meta_info'
+
+  # Documentation
+  /lms.lms.api.get_openapi_spec:
+    $ref: './paths/misc.yaml#/~1lms.lms.api.get_openapi_spec'
 
 components:
   securitySchemes:

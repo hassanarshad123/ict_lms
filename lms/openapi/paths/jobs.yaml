@@ -1,0 +1,116 @@
+# Job Opportunities Endpoints
+
+/lms.lms.api.get_job_details:
+  get:
+    summary: Get job opportunity details
+    description: |
+      Retrieve detailed information about a specific job opportunity.
+      Includes company details, job description, and requirements.
+    tags:
+      - Jobs
+    security:
+      - SessionAuth: []
+      - {}
+    parameters:
+      - name: job
+        in: query
+        required: true
+        schema:
+          type: string
+          description: Job Opportunity document ID
+    responses:
+      '200':
+        description: Job details retrieved
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                job_title:
+                  type: string
+                location:
+                  type: string
+                country:
+                  type: string
+                type:
+                  type: string
+                  enum: [Full-time, Part-time, Contract, Internship]
+                work_mode:
+                  type: string
+                  enum: [Remote, On-site, Hybrid]
+                company_name:
+                  type: string
+                company_logo:
+                  type: string
+                company_website:
+                  type: string
+                description:
+                  type: string
+                owner:
+                  type: string
+                creation:
+                  type: string
+                  format: date-time
+
+/lms.lms.api.get_job_opportunities:
+  get:
+    summary: Get list of job opportunities
+    description: |
+      Retrieve a list of job opportunities with optional filters.
+      Supports filtering by location, type, work mode, etc.
+    tags:
+      - Jobs
+    security:
+      - SessionAuth: []
+      - {}
+    parameters:
+      - name: filters
+        in: query
+        description: JSON filter object
+        required: false
+        schema:
+          type: string
+          example: '{"location": "Remote", "type": "Full-time"}'
+      - name: orFilters
+        in: query
+        description: JSON OR filter object
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: List of job opportunities
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  job_title:
+                    type: string
+                  location:
+                    type: string
+                  country:
+                    type: string
+                  type:
+                    type: string
+                  work_mode:
+                    type: string
+                  company_name:
+                    type: string
+                  company_logo:
+                    type: string
+                  description:
+                    type: string
+                    description: Plain text description (HTML stripped)
+                  creation:
+                    type: string
+                    format: date-time
+                  applicants:
+                    type: integer
+                    description: Number of applicants

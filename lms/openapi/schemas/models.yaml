@@ -357,3 +357,309 @@ components:
         exc_type:
           type: string
           description: Exception type
+
+    JobOpportunity:
+      type: object
+      description: Job opportunity details
+      properties:
+        name:
+          type: string
+          description: Job document ID
+        job_title:
+          type: string
+          description: Job title
+        location:
+          type: string
+          description: Job location
+        country:
+          type: string
+          description: Country code
+        type:
+          type: string
+          enum: [Full-time, Part-time, Contract, Internship]
+        work_mode:
+          type: string
+          enum: [Remote, On-site, Hybrid]
+        company_name:
+          type: string
+        company_logo:
+          type: string
+        company_website:
+          type: string
+        description:
+          type: string
+          description: Job description (HTML)
+        applicants:
+          type: integer
+          description: Number of applicants
+
+    Certificate:
+      type: object
+      description: Certificate document
+      properties:
+        name:
+          type: string
+          description: Certificate document ID
+        member:
+          type: string
+          description: User who received certificate
+        course:
+          type: string
+          description: Course ID
+        batch_name:
+          type: string
+          description: Batch name (if applicable)
+        issue_date:
+          type: string
+          format: date
+        expiry_date:
+          type: string
+          format: date
+          nullable: true
+        template:
+          type: string
+          description: Certificate template
+        published:
+          type: boolean
+          description: Whether certificate is publicly visible
+
+    Program:
+      type: object
+      description: Course program
+      properties:
+        name:
+          type: string
+          description: Program document ID
+        course_count:
+          type: integer
+          description: Number of courses in program
+        member_count:
+          type: integer
+          description: Number of enrolled members
+        published:
+          type: boolean
+        enforce_course_order:
+          type: boolean
+          description: Whether courses must be completed in order
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+          description: Courses in the program
+
+    Notification:
+      type: object
+      description: Notification log entry
+      properties:
+        name:
+          type: string
+          description: Notification document ID
+        subject:
+          type: string
+          description: Notification subject
+        from_user:
+          type: string
+          description: User who triggered notification
+        full_name:
+          type: string
+          description: From user's full name
+        user_image:
+          type: string
+          description: From user's profile image
+        link:
+          type: string
+          description: Link to related content
+        read:
+          type: boolean
+          description: Whether notification has been read
+
+    LiveClass:
+      type: object
+      description: Live class meeting
+      properties:
+        name:
+          type: string
+          description: Live class document ID
+        title:
+          type: string
+          description: Class title
+        description:
+          type: string
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+          format: time
+        duration:
+          type: integer
+          description: Duration in minutes
+        start_url:
+          type: string
+          description: Host start URL (Zoom)
+        join_url:
+          type: string
+          description: Participant join URL (Zoom)
+        meeting_id:
+          type: string
+          description: Zoom meeting ID
+        attendees:
+          type: integer
+          description: Number of attendees
+        course:
+          type: string
+          description: Associated course
+        batch_name:
+          type: string
+          description: Associated batch
+
+    Payment:
+      type: object
+      description: Payment record
+      properties:
+        name:
+          type: string
+          description: Payment document ID
+        member:
+          type: string
+          description: User making payment
+        amount:
+          type: number
+          description: Payment amount
+        currency:
+          type: string
+          description: Currency code
+        payment_received:
+          type: boolean
+          description: Whether payment was received
+        payment_id:
+          type: string
+          description: Payment gateway transaction ID
+        order_id:
+          type: string
+          description: Order ID from payment gateway
+        payment_for_document_type:
+          type: string
+          enum: [LMS Course, LMS Batch]
+        payment_for_document:
+          type: string
+        payment_for_certificate:
+          type: boolean
+        coupon:
+          type: string
+          nullable: true
+        discount_amount:
+          type: number
+
+    DiscussionTopic:
+      type: object
+      description: Discussion topic
+      properties:
+        name:
+          type: string
+          description: Topic document ID
+        title:
+          type: string
+          description: Topic title
+        owner:
+          type: string
+          description: User who created topic
+        creation:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time
+        reference_doctype:
+          type: string
+          enum: [Course Lesson, LMS Batch]
+        reference_docname:
+          type: string
+        user:
+          type: object
+          properties:
+            full_name:
+              type: string
+            user_image:
+              type: string
+
+    DiscussionReply:
+      type: object
+      description: Discussion reply
+      properties:
+        name:
+          type: string
+          description: Reply document ID
+        topic:
+          type: string
+          description: Topic document ID
+        owner:
+          type: string
+          description: User who created reply
+        reply:
+          type: string
+          description: Reply content (HTML)
+        creation:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time
+        user:
+          type: object
+          properties:
+            full_name:
+              type: string
+            user_image:
+              type: string
+
+    Badge:
+      type: object
+      description: Badge assignment
+      properties:
+        badge:
+          type: string
+          description: Badge document ID
+        name:
+          type: string
+          description: Badge name
+        title:
+          type: string
+          description: Badge title
+        image:
+          type: string
+          description: Badge image URL
+
+    ProgrammingExerciseSubmission:
+      type: object
+      description: Programming exercise submission
+      properties:
+        name:
+          type: string
+          description: Submission document ID
+        exercise:
+          type: string
+          description: Exercise document ID
+        member:
+          type: string
+          description: User who submitted
+        code:
+          type: string
+          description: Submitted code
+        status:
+          type: string
+          enum: [Passed, Failed]
+        test_cases:
+          type: array
+          items:
+            type: object
+            properties:
+              input:
+                type: string
+              output:
+                type: string
+              expected_output:
+                type: string
+              status:
+                type: string
+                enum: [Passed, Failed]

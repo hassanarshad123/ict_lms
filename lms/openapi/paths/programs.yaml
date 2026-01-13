@@ -1,0 +1,120 @@
+# Program Management Endpoints
+
+/lms.lms.utils.get_programs:
+  get:
+    summary: Get programs
+    description: |
+      Get all programs with enrollment status.
+      Returns enrolled programs and published programs separately.
+    tags:
+      - Programs
+    security:
+      - SessionAuth: []
+    responses:
+      '200':
+        description: Programs retrieved
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enrolled:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      progress:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      course_count:
+                        type: integer
+                      member_count:
+                        type: integer
+                published:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      course_count:
+                        type: integer
+                      member_count:
+                        type: integer
+
+/lms.lms.utils.get_program_details:
+  get:
+    summary: Get program details
+    description: |
+      Get detailed information about a program including courses and eligibility.
+      Shows which courses are eligible based on previous course completion.
+    tags:
+      - Programs
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: program_name
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Program details
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                member_count:
+                  type: integer
+                course_count:
+                  type: integer
+                published:
+                  type: boolean
+                enforce_course_order:
+                  type: boolean
+                progress:
+                  type: integer
+                  description: User's progress in the program (if enrolled)
+                courses:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      title:
+                        type: string
+                      eligible:
+                        type: boolean
+                        description: Whether user can access this course
+                      membership:
+                        $ref: './schemas/models.yaml#/components/schemas/Enrollment'
+
+/lms.lms.utils.enroll_in_program:
+  post:
+    summary: Enroll in program
+    description: |
+      Enroll the current user in a program.
+      User must be logged in and program must be published.
+    tags:
+      - Programs
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: program
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Enrollment successful
+      '403':
+        $ref: './schemas/responses.yaml#/components/responses/Forbidden'
