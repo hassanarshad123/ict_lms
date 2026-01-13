@@ -2142,7 +2142,12 @@ def _create_or_update_recording_from_n8n(live_class, video_id, video_url, durati
 
 	# Set all required fields
 	recording.title = live_class.title
-	recording.course = live_class.course
+	# Ensure course is set - get from batch if not on live_class
+	course = live_class.course or get_course_from_batch(live_class.batch_name) if live_class.batch_name else None
+	if not course:
+		frappe.logger().error(f"[n8n Vimeo] No course found for live class {live_class.name} (batch: {live_class.batch_name})")
+		raise ValueError(f"Cannot create recording: No course associated with live class {live_class.name}")
+	recording.course = course
 	recording.live_class = live_class.name
 	recording.batch = live_class.batch_name
 	recording.recorded_on = live_class.date
@@ -2345,6 +2350,7 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 		return []
 
 	created_lessons = []
+	errors = []
 
 	# Create lesson in each course
 	for course_name in courses:
@@ -2363,13 +2369,20 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 
 			if existing_lesson:
 				frappe.logger().info(f"Lesson already exists: {existing_lesson}, updating with video URL")
-				# Update the existing lesson with the recording URL
-				lesson_doc = frappe.get_doc("Course Lesson", existing_lesson)
-				lesson_doc.youtube = video_url
-				# Update body with new content
-				lesson_doc.body = _build_recording_lesson_body(live_class, video_url, recording)
-				lesson_doc.save(ignore_permissions=True)
-				created_lessons.append(existing_lesson)
+				try:
+					# Update the existing lesson with the recording URL
+					lesson_doc = frappe.get_doc("Course Lesson", existing_lesson)
+					lesson_doc.youtube = video_url
+					# Update body with new content
+					lesson_doc.body = _build_recording_lesson_body(live_class, video_url, recording)
+					lesson_doc.save(ignore_permissions=True)
+					created_lessons.append(existing_lesson)
+					frappe.logger().info(f"[n8n Vimeo] Updated existing lesson {existing_lesson} in course {course_name}")
+				except Exception as e:
+					error_msg = f"Failed to update lesson {existing_lesson} in course {course_name}: {str(e)}"
+					frappe.logger().error(f"[n8n Vimeo] {error_msg}")
+					errors.append(error_msg)
+					frappe.log_error(title="n8n Vimeo Lesson Update Error", message=frappe.get_traceback())
 				continue
 
 			# Create new lesson
@@ -2390,16 +2403,25 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 			# Add lesson to chapter
 			add_lesson_to_chapter(recordings_chapter, lesson.name)
 
-			frappe.logger().info(f"[n8n Vimeo] Created lesson {lesson.name} in chapter {recordings_chapter.name}")
+			frappe.logger().info(f"[n8n Vimeo] Created lesson {lesson.name} in chapter {recordings_chapter.name} for course {course_name}")
 			created_lessons.append(lesson.name)
 
 		except Exception as e:
-			frappe.log_error(
-				f"Failed to create lesson for live class {live_class_name} in course {course_name}: {str(e)}",
-				"n8n Vimeo Lesson Creation Error"
-			)
+			error_msg = f"Failed to create lesson for live class {live_class_name} in course {course_name}: {str(e)}"
+			frappe.logger().error(f"[n8n Vimeo] {error_msg}")
+			errors.append(error_msg)
+			frappe.log_error(title="n8n Vimeo Lesson Creation Error", message=frappe.get_traceback())
 
-	frappe.db.commit()
+	# Commit all changes
+	try:
+		frappe.db.commit()
+		if errors:
+			frappe.logger().warning(f"[n8n Vimeo] Lesson creation completed with {len(errors)} error(s): {errors}")
+	except Exception as e:
+		frappe.logger().error(f"[n8n Vimeo] Failed to commit lesson changes: {str(e)}")
+		frappe.log_error(title="Lesson Commit Error", message=frappe.get_traceback())
+		# Don't raise - return what we have
+
 	return created_lessons
 
 
@@ -2466,7 +2488,17 @@ def find_or_create_recordings_chapter(course_name):
 
 	Returns:
 		Course Chapter document
+
+	Raises:
+		Exception: If course doesn't exist or chapter creation fails
 	"""
+	if not course_name:
+		raise ValueError("Course name is required to create recordings chapter")
+
+	# Verify course exists
+	if not frappe.db.exists("LMS Course", course_name):
+		raise ValueError(f"Course {course_name} does not exist")
+
 	# Look for existing "Recordings" chapter
 	existing_chapter = frappe.db.get_value(
 		"Course Chapter",
@@ -2478,33 +2510,38 @@ def find_or_create_recordings_chapter(course_name):
 		return frappe.get_doc("Course Chapter", existing_chapter)
 
 	# Create new "Recordings" chapter
-	chapter = frappe.new_doc("Course Chapter")
-	chapter.title = "Recordings"
-	chapter.course = course_name
-	chapter.description = "Live class recordings from this course"
-	chapter.insert(ignore_permissions=True)
+	try:
+		chapter = frappe.new_doc("Course Chapter")
+		chapter.title = "Recordings"
+		chapter.course = course_name
+		chapter.description = "Live class recordings from this course"
+		chapter.insert(ignore_permissions=True)
 
-	# Add chapter reference to course
-	chapter_ref = frappe.new_doc("Chapter Reference")
-	chapter_ref.chapter = chapter.name
-	chapter_ref.parent = course_name
-	chapter_ref.parenttype = "LMS Course"
-	chapter_ref.parentfield = "chapters"
+		# Add chapter reference to course
+		chapter_ref = frappe.new_doc("Chapter Reference")
+		chapter_ref.chapter = chapter.name
+		chapter_ref.parent = course_name
+		chapter_ref.parenttype = "LMS Course"
+		chapter_ref.parentfield = "chapters"
 
-	# Set idx to last position
-	existing_refs = frappe.get_all(
-		"Chapter Reference",
-		filters={"parent": course_name},
-		order_by="idx desc",
-		limit=1,
-		pluck="idx",
-	)
-	chapter_ref.idx = (existing_refs[0] + 1) if existing_refs else 1
+		# Set idx to last position
+		existing_refs = frappe.get_all(
+			"Chapter Reference",
+			filters={"parent": course_name},
+			order_by="idx desc",
+			limit=1,
+			pluck="idx",
+		)
+		chapter_ref.idx = (existing_refs[0] + 1) if existing_refs else 1
 
-	chapter_ref.insert(ignore_permissions=True)
+		chapter_ref.insert(ignore_permissions=True)
+		frappe.db.commit()
 
-	frappe.logger().info(f"[n8n Vimeo] Created Recordings chapter in course {course_name}")
-	return chapter
+		frappe.logger().info(f"[n8n Vimeo] Created Recordings chapter in course {course_name}")
+		return chapter
+	except Exception as e:
+		frappe.logger().error(f"[n8n Vimeo] Failed to create Recordings chapter: {str(e)}")
+		raise
 
 
 def add_lesson_to_chapter(chapter, lesson_name):
@@ -2514,7 +2551,13 @@ def add_lesson_to_chapter(chapter, lesson_name):
 	Args:
 		chapter: Course Chapter document
 		lesson_name: Name of the Course Lesson
+
+	Raises:
+		Exception: If lesson reference creation fails
 	"""
+	if not chapter or not lesson_name:
+		raise ValueError("Chapter and lesson_name are required")
+
 	# Check if lesson reference already exists
 	existing_ref = frappe.db.exists(
 		"Lesson Reference",
@@ -2522,6 +2565,7 @@ def add_lesson_to_chapter(chapter, lesson_name):
 	)
 
 	if existing_ref:
+		frappe.logger().info(f"[n8n Vimeo] Lesson {lesson_name} already in chapter {chapter.name}")
 		return
 
 	# Get last idx
@@ -2534,13 +2578,18 @@ def add_lesson_to_chapter(chapter, lesson_name):
 	)
 
 	# Create lesson reference
-	lesson_ref = frappe.new_doc("Lesson Reference")
-	lesson_ref.lesson = lesson_name
-	lesson_ref.parent = chapter.name
-	lesson_ref.parenttype = "Course Chapter"
-	lesson_ref.parentfield = "lessons"
-	lesson_ref.idx = (existing_refs[0] + 1) if existing_refs else 1
-	lesson_ref.insert(ignore_permissions=True)
+	try:
+		lesson_ref = frappe.new_doc("Lesson Reference")
+		lesson_ref.lesson = lesson_name
+		lesson_ref.parent = chapter.name
+		lesson_ref.parenttype = "Course Chapter"
+		lesson_ref.parentfield = "lessons"
+		lesson_ref.idx = (existing_refs[0] + 1) if existing_refs else 1
+		lesson_ref.insert(ignore_permissions=True)
+		frappe.logger().info(f"[n8n Vimeo] Added lesson {lesson_name} to chapter {chapter.name}")
+	except Exception as e:
+		frappe.logger().error(f"[n8n Vimeo] Failed to add lesson to chapter: {str(e)}")
+		raise
 
 
 def _validate_vimeo_n8n_payload(payload):
@@ -2721,6 +2770,13 @@ def process_vimeo_recording():
 
 		frappe.logger().info(f"[n8n Vimeo] Matched Live Class: {live_class.name} using {match_method}")
 
+		# Ensure live_class has course field populated
+		if not live_class.course and live_class.batch_name:
+			course = get_course_from_batch(live_class.batch_name)
+			if course:
+				live_class.course = course
+				frappe.logger().info(f"[n8n Vimeo] Set course {course} on live class {live_class.name} from batch")
+
 		# Create/update LMS Course Recording document
 		recording = None
 		try:
@@ -2731,13 +2787,23 @@ def process_vimeo_recording():
 				duration=duration
 			)
 			frappe.logger().info(f"[n8n Vimeo] Recording document created/updated: {recording.name}")
+		except ValueError as e:
+			# This is a validation error (e.g., missing course) - should be returned as error
+			frappe.logger().error(f"[n8n Vimeo] Validation error creating recording: {str(e)}")
+			frappe.log_error(title="n8n Recording Validation Error", message=frappe.get_traceback())
+			return {
+				"status": "error",
+				"message": str(e),
+				"code": "VALIDATION_ERROR"
+			}
 		except Exception as e:
 			frappe.logger().error(f"[n8n Vimeo] Failed to create recording document: {str(e)}")
 			frappe.log_error(title="n8n Recording Creation Error", message=frappe.get_traceback())
-			# Continue anyway - lesson creation should still work
+			# Continue anyway - lesson creation should still work, but log the error
 
 		# Create lesson from recording
 		lesson_created = False
+		lesson_error = None
 		try:
 			lessons = create_lesson_from_recording(
 				live_class_name=live_class.name,
@@ -2745,13 +2811,28 @@ def process_vimeo_recording():
 				recording=recording  # Pass the recording document we created
 			)
 			lesson_created = len(lessons) > 0
-			frappe.logger().info(f"[n8n Vimeo] Created/updated {len(lessons)} lesson(s) for {live_class.name}")
+			if lesson_created:
+				frappe.logger().info(f"[n8n Vimeo] Created/updated {len(lessons)} lesson(s) for {live_class.name}")
+			else:
+				frappe.logger().warning(f"[n8n Vimeo] No lessons created for {live_class.name} (check logs for details)")
 		except Exception as e:
-			frappe.logger().warning(f"[n8n Vimeo] Could not create lesson: {str(e)}")
+			lesson_error = str(e)
+			frappe.logger().error(f"[n8n Vimeo] Could not create lesson: {lesson_error}")
 			frappe.log_error(title="Lesson Creation Error", message=frappe.get_traceback())
 
 		# Commit changes to database
-		frappe.db.commit()
+		try:
+			frappe.db.commit()
+		except Exception as e:
+			frappe.logger().error(f"[n8n Vimeo] Database commit failed: {str(e)}")
+			frappe.log_error(title="Database Commit Error", message=frappe.get_traceback())
+			# Try to rollback
+			frappe.db.rollback()
+			return {
+				"status": "error",
+				"message": f"Failed to save changes to database: {str(e)}",
+				"code": "DATABASE_ERROR"
+			}
 
 		return {
 			"status": "success",
@@ -2760,6 +2841,7 @@ def process_vimeo_recording():
 			"recording": recording.name if recording else None,
 			"video_url": video_url,
 			"lesson_created": lesson_created,
+			"lesson_error": lesson_error if not lesson_created and lesson_error else None,
 			"matched_by": match_method
 		}
 
@@ -2771,12 +2853,15 @@ def process_vimeo_recording():
 			"code": "JSON_ERROR"
 		}
 	except Exception as e:
-		frappe.logger().error(f"[n8n Vimeo] Unexpected error: {str(e)}")
-		frappe.log_error(title="n8n Vimeo Recording Error", message=frappe.get_traceback())
+		error_msg = str(e)
+		error_traceback = frappe.get_traceback()
+		frappe.logger().error(f"[n8n Vimeo] Unexpected error: {error_msg}")
+		frappe.log_error(title="n8n Vimeo Recording Error", message=error_traceback)
 		return {
 			"status": "error",
-			"message": "Error processing recording",
-			"code": "PROCESSING_ERROR"
+			"message": f"Error processing recording: {error_msg}",
+			"code": "PROCESSING_ERROR",
+			"details": error_traceback.split('\n')[-5:] if error_traceback else None  # Last 5 lines of traceback
 		}
 
 
