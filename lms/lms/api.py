@@ -2288,7 +2288,7 @@ def get_course_from_batch(batch_name):
 	return courses[0] if courses else None
 
 
-def create_lesson_from_recording(live_class_name):
+def create_lesson_from_recording(live_class_name, video_url=None, recording=None):
 	"""
 	Auto-create a lesson in the course from a live class recording.
 
@@ -2299,6 +2299,8 @@ def create_lesson_from_recording(live_class_name):
 
 	Args:
 		live_class_name: Name of the LMS Live Class document
+		video_url: Video embed URL (if not provided, tries to get from recording or live_class)
+		recording: LMS Course Recording document (optional, for metadata like duration, instructor)
 
 	Returns:
 		list: Names of created lessons
@@ -2306,8 +2308,18 @@ def create_lesson_from_recording(live_class_name):
 	# Get live class details
 	live_class = frappe.get_doc("LMS Live Class", live_class_name)
 
-	if not live_class.recording_url:
-		frappe.logger().warning(f"[n8n Vimeo] Live class {live_class_name} has no recording_url")
+	# Determine video URL to use
+	if not video_url:
+		if recording and recording.vimeo_player_embed_url:
+			video_url = recording.vimeo_player_embed_url
+		else:
+			# Fallback: try to read from live_class (legacy, may not exist)
+			video_url = live_class.get("recording_url")
+
+	if not video_url:
+		frappe.logger().warning(
+			f"[create_lesson_from_recording] No video URL provided for {live_class_name}"
+		)
 		return []
 
 	# Find associated batches and courses
@@ -2350,10 +2362,12 @@ def create_lesson_from_recording(live_class_name):
 			)
 
 			if existing_lesson:
-				frappe.logger().info(f"[n8n Vimeo] Lesson already exists: {existing_lesson}")
+				frappe.logger().info(f"Lesson already exists: {existing_lesson}, updating with video URL")
 				# Update the existing lesson with the recording URL
 				lesson_doc = frappe.get_doc("Course Lesson", existing_lesson)
-				lesson_doc.youtube = live_class.recording_url
+				lesson_doc.youtube = video_url
+				# Update body with new content
+				lesson_doc.body = _build_recording_lesson_body(live_class, video_url, recording)
 				lesson_doc.save(ignore_permissions=True)
 				created_lessons.append(existing_lesson)
 				continue
@@ -2363,21 +2377,13 @@ def create_lesson_from_recording(live_class_name):
 			lesson.title = live_class.title
 			lesson.chapter = recordings_chapter.name
 			lesson.course = course_name
-			lesson.include_in_preview = 0
+			lesson.include_in_preview = 0  # Not included in preview
 
-			# Set the video URL (Vimeo player embed URL)
-			lesson.youtube = live_class.recording_url
+			# Set the video URL
+			lesson.youtube = video_url
 
-			# Set body content with video description
-			lesson.body = f"""
-<div class="embed-responsive embed-responsive-16by9">
-	<iframe class="embed-responsive-item" src="{live_class.recording_url}" allowfullscreen></iframe>
-</div>
-
-<p><strong>Recorded on:</strong> {format_date(live_class.date, 'medium')}</p>
-{f'<p><strong>Duration:</strong> {live_class.duration} minutes</p>' if live_class.duration else ''}
-{f'<p>{live_class.description}</p>' if live_class.description else ''}
-"""
+			# Set body content with video and metadata
+			lesson.body = _build_recording_lesson_body(live_class, video_url, recording)
 
 			lesson.insert(ignore_permissions=True)
 
@@ -2395,6 +2401,60 @@ def create_lesson_from_recording(live_class_name):
 
 	frappe.db.commit()
 	return created_lessons
+
+
+def _build_recording_lesson_body(live_class, video_url, recording=None):
+	"""
+	Build the HTML body content for a recording lesson.
+
+	Args:
+		live_class: LMS Live Class document
+		video_url: Vimeo embed URL
+		recording: LMS Course Recording document (optional)
+
+	Returns:
+		str: HTML content for lesson body
+	"""
+	from frappe.utils import format_date
+
+	# Build metadata sections
+	metadata_parts = []
+
+	# Date
+	if live_class.date:
+		metadata_parts.append(
+			f'<p><strong>Recorded on:</strong> {format_date(live_class.date, "medium")}</p>'
+		)
+
+	# Duration
+	if recording and recording.duration:
+		duration_formatted = recording.get("duration_formatted") or f"{recording.duration // 60} minutes"
+		metadata_parts.append(f'<p><strong>Duration:</strong> {duration_formatted}</p>')
+	elif live_class.duration:
+		metadata_parts.append(f'<p><strong>Duration:</strong> {live_class.duration} minutes</p>')
+
+	# Instructor
+	if recording and recording.instructor:
+		instructor_name = frappe.db.get_value("User", recording.instructor, "full_name")
+		if instructor_name:
+			metadata_parts.append(f'<p><strong>Instructor:</strong> {instructor_name}</p>')
+
+	# Description
+	description = ""
+	if live_class.description:
+		description = f'<p>{live_class.description}</p>'
+
+	# Build complete body
+	body = f"""
+<div class="embed-responsive embed-responsive-16by9">
+	<iframe class="embed-responsive-item" src="{video_url}" allowfullscreen></iframe>
+</div>
+
+{''.join(metadata_parts)}
+{description}
+"""
+
+	return body
 
 
 def find_or_create_recordings_chapter(course_name):
@@ -2661,12 +2721,6 @@ def process_vimeo_recording():
 
 		frappe.logger().info(f"[n8n Vimeo] Matched Live Class: {live_class.name} using {match_method}")
 
-		# Update Live Class with recording URL
-		live_class.recording_url = video_url
-		live_class.recording_available = 1
-		live_class.save(ignore_permissions=True)
-		frappe.logger().info(f"[n8n Vimeo] Updated recording URL for {live_class.name}")
-
 		# Create/update LMS Course Recording document
 		recording = None
 		try:
@@ -2685,11 +2739,16 @@ def process_vimeo_recording():
 		# Create lesson from recording
 		lesson_created = False
 		try:
-			lessons = create_lesson_from_recording(live_class.name)
+			lessons = create_lesson_from_recording(
+				live_class_name=live_class.name,
+				video_url=video_url,
+				recording=recording  # Pass the recording document we created
+			)
 			lesson_created = len(lessons) > 0
 			frappe.logger().info(f"[n8n Vimeo] Created/updated {len(lessons)} lesson(s) for {live_class.name}")
 		except Exception as e:
 			frappe.logger().warning(f"[n8n Vimeo] Could not create lesson: {str(e)}")
+			frappe.log_error(title="Lesson Creation Error", message=frappe.get_traceback())
 
 		# Commit changes to database
 		frappe.db.commit()
