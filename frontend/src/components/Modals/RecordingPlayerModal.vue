@@ -37,6 +37,10 @@
 							<Clock class="h-4 w-4" />
 							<span>{{ formatDuration(recording.duration) }}</span>
 						</div>
+						<div v-if="recording?.instructor_name" class="flex items-center space-x-1">
+							<User class="h-4 w-4" />
+							<span>{{ recording.instructor_name }}</span>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -47,7 +51,7 @@
 <script setup>
 import { Dialog } from 'frappe-ui'
 import { computed, inject } from 'vue'
-import { Video, Calendar, Clock } from 'lucide-vue-next'
+import { Video, Calendar, Clock, User } from 'lucide-vue-next'
 
 const dayjs = inject('$dayjs')
 const show = defineModel()

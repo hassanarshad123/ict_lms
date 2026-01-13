@@ -37,8 +37,16 @@
 			/>
 		</div>
 
-		<div v-else class="text-sm italic text-ink-gray-5 mt-4">
-			{{ __('No recordings available for this course yet') }}
+		<div v-else class="text-sm text-ink-gray-5 mt-4">
+			<div v-if="isInstructor || user.data?.is_moderator" class="text-center py-8">
+				<Video class="h-12 w-12 mx-auto mb-3 text-ink-gray-4" />
+				<p class="font-medium mb-1">{{ __('No recordings yet') }}</p>
+				<p class="text-xs">{{ __('Upload recordings using the button above after conducting live classes') }}</p>
+			</div>
+			<div v-else class="text-center py-8 italic">
+				<Video class="h-12 w-12 mx-auto mb-3 text-ink-gray-4" />
+				<p>{{ __('No recordings available for this course yet') }}</p>
+			</div>
 		</div>
 
 		<RecordingPlayerModal
@@ -82,7 +90,7 @@
 <script setup>
 import { createResource, Button, Dialog, FormControl, LoadingIndicator } from 'frappe-ui'
 import { computed, ref, inject } from 'vue'
-import { Upload } from 'lucide-vue-next'
+import { Upload, Video } from 'lucide-vue-next'
 import RecordingCard from '@/components/RecordingCard.vue'
 import RecordingPlayerModal from '@/components/Modals/RecordingPlayerModal.vue'
 

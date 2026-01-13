@@ -78,6 +78,10 @@
 						{{ formatDate(recording.recorded_on) }}
 					</span>
 				</div>
+				<div v-if="recording.instructor_name" class="flex items-center space-x-2">
+					<User class="w-4 h-4 stroke-1.5" />
+					<span>{{ recording.instructor_name }}</span>
+				</div>
 			</div>
 
 			<Button
@@ -111,7 +115,7 @@
 
 <script setup>
 import { computed, inject } from 'vue'
-import { Video, Play, Calendar } from 'lucide-vue-next'
+import { Video, Play, Calendar, User } from 'lucide-vue-next'
 import { Button, Badge, LoadingIndicator } from 'frappe-ui'
 
 const dayjs = inject('$dayjs')
