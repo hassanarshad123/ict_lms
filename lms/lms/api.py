@@ -2115,6 +2115,55 @@ def get_upcoming_batches():
 # ============================================================================
 
 
+def _create_or_update_recording_from_n8n(live_class, video_id, video_url, duration=0):
+	"""
+	Create or update LMS Course Recording document from n8n payload.
+
+	Args:
+		live_class: LMS Live Class document
+		video_id: Vimeo video ID
+		video_url: Vimeo player embed URL
+		duration: Video duration in seconds (optional)
+
+	Returns:
+		LMS Course Recording document
+	"""
+	# Check if recording already exists for this video
+	existing = frappe.db.exists("LMS Course Recording", {
+		"vimeo_video_id": video_id
+	})
+
+	if existing:
+		recording = frappe.get_doc("LMS Course Recording", existing)
+		frappe.logger().info(f"[n8n Vimeo] Updating existing recording: {recording.name}")
+	else:
+		recording = frappe.new_doc("LMS Course Recording")
+		frappe.logger().info(f"[n8n Vimeo] Creating new recording for video: {video_id}")
+
+	# Set all required fields
+	recording.title = live_class.title
+	recording.course = live_class.course
+	recording.live_class = live_class.name
+	recording.batch = live_class.batch_name
+	recording.recorded_on = live_class.date
+	recording.instructor = live_class.host
+	recording.duration = duration if duration else 0
+	recording.status = "Uploaded"  # Critical: must be "Uploaded" for students to see it
+
+	# Vimeo details
+	recording.vimeo_video_id = video_id
+	recording.vimeo_uri = f"/videos/{video_id}"
+	recording.vimeo_player_embed_url = video_url
+
+	# Save with permission bypass (called from webhook context)
+	recording.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	frappe.logger().info(f"[n8n Vimeo] Recording document {'updated' if existing else 'created'}: {recording.name}")
+
+	return recording
+
+
 def _find_live_class_for_vimeo_video(video_title, video_description, created_time):
 	"""
 	Find matching Live Class for a Vimeo video processed by n8n.
@@ -2618,6 +2667,21 @@ def process_vimeo_recording():
 		live_class.save(ignore_permissions=True)
 		frappe.logger().info(f"[n8n Vimeo] Updated recording URL for {live_class.name}")
 
+		# Create/update LMS Course Recording document
+		recording = None
+		try:
+			recording = _create_or_update_recording_from_n8n(
+				live_class=live_class,
+				video_id=video_id,
+				video_url=video_url,
+				duration=duration
+			)
+			frappe.logger().info(f"[n8n Vimeo] Recording document created/updated: {recording.name}")
+		except Exception as e:
+			frappe.logger().error(f"[n8n Vimeo] Failed to create recording document: {str(e)}")
+			frappe.log_error(title="n8n Recording Creation Error", message=frappe.get_traceback())
+			# Continue anyway - lesson creation should still work
+
 		# Create lesson from recording
 		lesson_created = False
 		try:
@@ -2634,6 +2698,7 @@ def process_vimeo_recording():
 			"status": "success",
 			"message": f"Recording updated with Vimeo URL for {live_class.name}",
 			"live_class": live_class.name,
+			"recording": recording.name if recording else None,
 			"video_url": video_url,
 			"lesson_created": lesson_created,
 			"matched_by": match_method
