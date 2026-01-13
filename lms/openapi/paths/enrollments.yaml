@@ -1,0 +1,74 @@
+# Enrollment Endpoints
+
+/lms.lms.utils.enroll_in_course:
+  post:
+    summary: Enroll in course
+    description: Enroll the current user in a course
+    tags:
+      - Enrollment
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Enrollment successful
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/models.yaml#/components/schemas/Enrollment'
+
+/lms.lms.utils.get_membership:
+  get:
+    summary: Get enrollment status
+    description: Check if user is enrolled in a course
+    tags:
+      - Enrollment
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Membership status
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/models.yaml#/components/schemas/Enrollment'
+
+/lms.lms.api.get_course_progress_distribution:
+  get:
+    summary: Get course progress statistics
+    description: Get progress distribution for a course (instructor only)
+    tags:
+      - Enrollment
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Progress statistics
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                average_progress:
+                  type: number
+                progress_distribution:
+                  type: array
+                  items:
+                    type: object

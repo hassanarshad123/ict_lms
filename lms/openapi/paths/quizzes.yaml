@@ -1,0 +1,84 @@
+# Quiz & Assessment Endpoints
+
+/lms.lms.doctype.lms_quiz.lms_quiz.quiz_summary:
+  post:
+    summary: Submit quiz
+    description: Submit quiz answers and get results
+    tags:
+      - Quizzes
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: quiz
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: results
+        in: query
+        required: true
+        schema:
+          type: string
+          description: JSON string of quiz answers
+    responses:
+      '200':
+        description: Quiz results
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/models.yaml#/components/schemas/QuizSubmission'
+
+/lms.lms.doctype.lms_assignment_submission.lms_assignment_submission.upload_assignment:
+  post:
+    summary: Submit assignment
+    description: Upload assignment submission
+    tags:
+      - Quizzes
+    security:
+      - SessionAuth: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              assignment:
+                type: string
+              lesson:
+                type: string
+              answer:
+                type: string
+              assignment_attachment:
+                type: string
+    responses:
+      '200':
+        description: Assignment submitted
+        content:
+          application/json:
+            schema:
+              type: string
+              description: Submission document ID
+
+/lms.lms.utils.get_assessments:
+  get:
+    summary: Get batch assessments
+    description: Retrieve quizzes and assignments for a batch
+    tags:
+      - Quizzes
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: batch
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: List of assessments
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object

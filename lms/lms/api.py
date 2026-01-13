@@ -2877,3 +2877,35 @@ def has_recording_access(course):
 		return True
 
 	return False
+
+
+@frappe.whitelist(allow_guest=True)
+def get_openapi_spec():
+	"""
+	Returns the OpenAPI 3.0 specification as JSON.
+	Reads from YAML files and converts to JSON for Swagger UI.
+
+	Returns:
+		dict: OpenAPI specification as dictionary
+	"""
+	import yaml
+	import os
+
+	spec_path = os.path.join(
+		frappe.get_app_path("lms"),
+		"openapi",
+		"spec.yaml"
+	)
+
+	try:
+		with open(spec_path, 'r', encoding='utf-8') as f:
+			spec = yaml.safe_load(f)
+		return spec
+	except FileNotFoundError:
+		frappe.throw(_("OpenAPI specification file not found"))
+	except yaml.YAMLError as e:
+		frappe.log_error(f"YAML parsing error: {str(e)}", "OpenAPI Spec Error")
+		frappe.throw(_("Error parsing OpenAPI specification"))
+	except Exception as e:
+		frappe.log_error(f"Error loading OpenAPI spec: {str(e)}", "OpenAPI Spec Error")
+		frappe.throw(_("Error loading OpenAPI specification"))

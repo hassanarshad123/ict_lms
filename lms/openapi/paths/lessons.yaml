@@ -1,0 +1,108 @@
+# Lesson Management Endpoints
+
+/lms.lms.utils.get_lesson:
+  get:
+    summary: Get lesson content
+    description: Retrieve full lesson content including videos, body, and navigation
+    tags:
+      - Lessons
+    security:
+      - SessionAuth: []
+      - {}
+    parameters:
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: chapter
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: lesson
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Lesson content retrieved
+        content:
+          application/json:
+            schema:
+              $ref: './schemas/models.yaml#/components/schemas/Lesson'
+
+/lms.lms.doctype.course_lesson.course_lesson.save_progress:
+  post:
+    summary: Save lesson progress
+    description: Record that a student has viewed/completed a lesson
+    tags:
+      - Lessons
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: lesson
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Progress saved
+
+/lms.lms.api.mark_lesson_progress:
+  post:
+    summary: Mark lesson as complete
+    description: Explicitly mark a lesson as completed
+    tags:
+      - Lessons
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: chapter_number
+        in: query
+        required: true
+        schema:
+          type: integer
+      - name: lesson_number
+        in: query
+        required: true
+        schema:
+          type: integer
+    responses:
+      '200':
+        description: Lesson marked as complete
+
+/lms.lms.api.delete_lesson:
+  delete:
+    summary: Delete lesson
+    description: Delete a lesson (instructor only)
+    tags:
+      - Lessons
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: lesson
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: chapter
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Lesson deleted

@@ -1,0 +1,96 @@
+# Recording Endpoints
+
+/lms.lms.api.get_course_recordings:
+  get:
+    summary: Get course recordings
+    description: Retrieve all recordings for a course
+    tags:
+      - Recordings
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: course
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: start
+        in: query
+        schema:
+          type: integer
+          default: 0
+      - name: page_length
+        in: query
+        schema:
+          type: integer
+          default: 20
+    responses:
+      '200':
+        description: List of recordings
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recordings:
+                  type: array
+                  items:
+                    $ref: './schemas/models.yaml#/components/schemas/Recording'
+                total_count:
+                  type: integer
+
+/lms.lms.api.get_recording_embed:
+  get:
+    summary: Get recording embed URL
+    description: Get Vimeo embed URL for a recording
+    tags:
+      - Recordings
+    security:
+      - SessionAuth: []
+    parameters:
+      - name: recording_name
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Embed URL retrieved
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                embed_url:
+                  type: string
+                recording_details:
+                  $ref: './schemas/models.yaml#/components/schemas/Recording'
+
+/lms.lms.api.trigger_recording_sync:
+  post:
+    summary: Trigger recording sync
+    description: Manually trigger Vimeo folder polling (moderator only)
+    tags:
+      - Recordings
+    security:
+      - SessionAuth: []
+    responses:
+      '200':
+        description: Sync triggered
+
+/lms.lms.webhooks.vimeo_webhook.handle_vimeo_event:
+  post:
+    summary: Vimeo webhook handler
+    description: Handles Vimeo video-created webhook events (signature validated)
+    tags:
+      - Recordings
+    security:
+      - {}
+    requestBody:
+      content:
+        application/json:
+          schema:
+            type: object
+    responses:
+      '200':
+        description: Webhook processed

@@ -1,0 +1,359 @@
+components:
+  schemas:
+    Course:
+      type: object
+      description: Course document with all details
+      properties:
+        name:
+          type: string
+          description: Course document ID (e.g., "COURSE-001")
+          example: "LMS-COURSE-2024-00001"
+        title:
+          type: string
+          description: Course title
+          example: "Introduction to Python Programming"
+        description:
+          type: string
+          description: Full HTML description of the course
+        short_introduction:
+          type: string
+          description: Brief summary shown in course cards
+          example: "Learn Python basics from scratch"
+        image:
+          type: string
+          description: Course cover image URL
+          example: "/files/course-python.jpg"
+        card_gradient:
+          type: string
+          enum: [Red, Blue, Green, Yellow, Orange, Pink, Amber, Violet, Cyan, Teal, Gray, Purple]
+          description: Fallback gradient color if no image
+        instructors:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              full_name:
+                type: string
+              user_image:
+                type: string
+          description: List of course instructors
+        tags:
+          type: array
+          items:
+            type: string
+          description: Course tags for categorization
+        price:
+          type: number
+          format: float
+          description: Course price (0 for free courses)
+          example: 99.00
+        currency:
+          type: string
+          description: Currency code
+          example: "USD"
+        enrollments:
+          type: integer
+          description: Number of enrolled students
+          example: 150
+        rating:
+          type: number
+          format: float
+          description: Average rating (0-5)
+          example: 4.5
+        published:
+          type: boolean
+          description: Whether course is published
+        published_on:
+          type: string
+          format: date
+          description: Publication date
+        disable_self_learning:
+          type: boolean
+          description: If true, requires enrollment before access
+        enable_certification:
+          type: boolean
+          description: Whether certification is available
+
+    Lesson:
+      type: object
+      description: Course lesson with content
+      properties:
+        name:
+          type: string
+          description: Lesson document ID
+        title:
+          type: string
+          description: Lesson title
+          example: "Variables and Data Types"
+        chapter:
+          type: string
+          description: Parent chapter ID
+        course:
+          type: string
+          description: Parent course ID
+        body:
+          type: string
+          description: Lesson content in Markdown (legacy)
+        content:
+          type: string
+          description: Lesson content in EditorJS JSON format
+        youtube:
+          type: string
+          description: YouTube video URL
+        include_in_preview:
+          type: boolean
+          description: Allow preview without enrollment
+        quiz_id:
+          type: string
+          description: Associated quiz ID
+        question:
+          type: string
+          description: Assignment question
+        file_type:
+          type: string
+          enum: [Image, Document, PDF]
+          description: Expected assignment file type
+        instructor_notes:
+          type: string
+          description: Notes visible only to instructors
+
+    Enrollment:
+      type: object
+      description: Course enrollment record
+      properties:
+        name:
+          type: string
+          description: Enrollment document ID
+        course:
+          type: string
+          description: Course ID
+        member:
+          type: string
+          description: Student user ID
+        current_lesson:
+          type: string
+          description: Last viewed lesson
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Completion percentage
+        member_type:
+          type: string
+          enum: [Student, Mentor, Staff]
+          description: Type of membership
+        role:
+          type: string
+          enum: [Member, Admin]
+          description: Role in the course
+
+    Recording:
+      type: object
+      description: Live class recording
+      properties:
+        name:
+          type: string
+          description: Recording document ID
+        title:
+          type: string
+          description: Recording title
+          example: "Introduction to Python - Week 1"
+        status:
+          type: string
+          enum: [Pending, Processing, Uploaded, Failed]
+          description: Recording processing status
+        course:
+          type: string
+          description: Associated course ID
+        recorded_on:
+          type: string
+          format: date
+          description: Recording date
+        duration:
+          type: integer
+          description: Duration in seconds
+          example: 3600
+        duration_formatted:
+          type: string
+          description: Human-readable duration
+          example: "1h 30m"
+        thumbnail:
+          type: string
+          description: Video thumbnail URL
+        vimeo_video_id:
+          type: string
+          description: Vimeo video ID
+        vimeo_uri:
+          type: string
+          description: Vimeo URI
+          example: "/videos/123456789"
+        vimeo_player_embed_url:
+          type: string
+          description: Vimeo iframe embed URL
+        instructor:
+          type: string
+          description: Instructor user ID
+        instructor_name:
+          type: string
+          description: Instructor full name
+        live_class:
+          type: string
+          description: Associated live class ID
+        error_message:
+          type: string
+          description: Error details if status=Failed
+
+    Batch:
+      type: object
+      description: Batch for scheduled courses
+      properties:
+        name:
+          type: string
+          description: Batch document ID
+        title:
+          type: string
+          description: Batch title
+          example: "Python Cohort - January 2026"
+        description:
+          type: string
+          description: Batch description
+        start_date:
+          type: string
+          format: date
+          description: Batch start date
+        end_date:
+          type: string
+          format: date
+          description: Batch end date
+        seats:
+          type: integer
+          description: Total available seats
+        seats_left:
+          type: integer
+          description: Remaining available seats
+        price:
+          type: number
+          format: float
+          description: Batch enrollment price
+        instructors:
+          type: array
+          items:
+            type: object
+          description: Batch instructors
+        courses:
+          type: array
+          items:
+            type: object
+            properties:
+              course:
+                type: string
+              course_name:
+                type: string
+          description: Courses included in batch
+        students:
+          type: array
+          items:
+            type: object
+          description: Enrolled students
+
+    Quiz:
+      type: object
+      description: Quiz assessment
+      properties:
+        name:
+          type: string
+          description: Quiz document ID
+        title:
+          type: string
+          description: Quiz title
+        passing_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Percentage required to pass
+        questions:
+          type: array
+          items:
+            type: object
+          description: Quiz questions
+
+    QuizSubmission:
+      type: object
+      description: Quiz submission result
+      properties:
+        submission:
+          type: string
+          description: Submission document ID
+        score:
+          type: number
+          description: Score achieved
+        score_out_of:
+          type: number
+          description: Maximum possible score
+        percentage:
+          type: number
+          format: float
+          description: Percentage score
+        pass:
+          type: boolean
+          description: Whether submission passed
+        is_open_ended:
+          type: boolean
+          description: Whether quiz has open-ended questions
+
+    UserInfo:
+      type: object
+      description: Current user information
+      properties:
+        name:
+          type: string
+          description: User ID (email)
+          example: "user@example.com"
+        email:
+          type: string
+          format: email
+          description: User email address
+        full_name:
+          type: string
+          description: User's full name
+          example: "John Doe"
+        user_image:
+          type: string
+          description: Profile image URL
+        is_admin:
+          type: boolean
+          description: Whether user is system admin
+        is_moderator:
+          type: boolean
+          description: Whether user is LMS moderator
+        is_course_creator:
+          type: boolean
+          description: Whether user can create courses
+        is_teacher:
+          type: boolean
+          description: Whether user is a teacher
+        is_student:
+          type: boolean
+          description: Whether user is a student
+        roles:
+          type: array
+          items:
+            type: string
+          description: List of user roles
+          example: ["Course Creator", "LMS Student"]
+
+    Error:
+      type: object
+      description: Error response
+      properties:
+        _server_messages:
+          type: string
+          description: Server error messages (JSON string)
+        exception:
+          type: string
+          description: Exception details
+        exc_type:
+          type: string
+          description: Exception type

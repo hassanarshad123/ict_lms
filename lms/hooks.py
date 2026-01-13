@@ -175,6 +175,7 @@ website_route_rules = [
 		"from_route": "/courses/<course_name>/<certificate_id>",
 		"to_route": "certificate",
 	},
+	{"from_route": "/api/docs", "to_route": "api_docs"},
 ]
 
 website_redirects = [

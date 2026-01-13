@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICT LMS API Documentation</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        /* Hide Swagger UI topbar */
+        .topbar {
+            display: none !important;
+        }
+
+        /* Custom header */
+        .custom-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .custom-header h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+            font-weight: 600;
+        }
+
+        .custom-header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .swagger-ui .info {
+            margin-top: 0 !important;
+        }
+
+        /* Improve mobile responsiveness */
+        @media (max-width: 768px) {
+            .custom-header h1 {
+                font-size: 1.5rem;
+            }
+            .custom-header p {
+                font-size: 0.9rem;
+            }
+        }
+
+        /* Loading state */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            font-size: 1.2rem;
+            color: #667eea;
+        }
+
+        .loading:after {
+            content: "...";
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% {
+                content: ".";
+            }
+            40% {
+                content: "..";
+            }
+            60% {
+                content: "...";
+            }
+            80%, 100% {
+                content: "";
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Custom Header -->
+    <div class="custom-header">
+        <h1>ICT LMS API Documentation</h1>
+        <p>Comprehensive API reference for the Learning Management System</p>
+    </div>
+
+    <!-- Swagger UI Container -->
+    <div id="swagger-ui"></div>
+
+    <!-- Loading State -->
+    <div class="loading" id="loading">Loading API documentation</div>
+
+    <!-- Swagger UI Scripts -->
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-standalone-preset.js"></script>
+
+    <script>
+        window.onload = function() {
+            // Hide loading indicator
+            setTimeout(() => {
+                document.getElementById('loading').style.display = 'none';
+            }, 500);
+
+            // Initialize Swagger UI
+            const ui = SwaggerUIBundle({
+                url: '/api/method/lms.lms.api.get_openapi_spec',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "BaseLayout",
+                tryItOutEnabled: true,
+                persistAuthorization: true,
+                filter: true,
+                displayRequestDuration: true,
+                docExpansion: "list",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                showExtensions: true,
+                showCommonExtensions: true,
+                onComplete: function() {
+                    console.log('Swagger UI loaded successfully');
+                },
+                onFailure: function(error) {
+                    console.error('Error loading Swagger UI:', error);
+                    document.getElementById('loading').innerHTML =
+                        '<div style="color: red;">Error loading API documentation. Please check the console for details.</div>';
+                    document.getElementById('loading').style.display = 'block';
+                }
+            });
+
+            window.ui = ui;
+        };
+    </script>
+</body>
+</html>

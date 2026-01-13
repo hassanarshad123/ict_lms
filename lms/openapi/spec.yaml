@@ -1,0 +1,236 @@
+openapi: 3.0.3
+info:
+  title: ICT LMS API
+  version: 1.0.0
+  description: |
+    # ICT Learning Management System API
+
+    Comprehensive API documentation for the ICT Learning Management System.
+
+    ## Authentication
+
+    This API uses session-based authentication. After logging in via `/api/method/login`,
+    Frappe sets a session cookie (`sid`) which is automatically included in subsequent requests.
+
+    ### Login Example
+    ```bash
+    curl -X POST https://yourdomain.com/api/method/login \
+      -H "Content-Type: application/json" \
+      -d '{"usr": "user@example.com", "pwd": "password"}'
+    ```
+
+    ### Guest Access
+
+    Endpoints marked with `allow_guest=True` can be accessed without authentication.
+    No cookie or header is required.
+
+    ## Base URL
+
+    All endpoints use the base URL: `/api/method/`
+
+    ## Rate Limiting
+
+    Some endpoints implement rate limiting (500 requests per hour per user).
+
+  contact:
+    name: ICT LMS Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: /api/method
+    description: API server
+
+security:
+  - SessionAuth: []
+  - {}  # Allow guest access for public endpoints
+
+tags:
+  - name: Courses
+    description: Course management and browsing
+  - name: Lessons
+    description: Lesson content and progress tracking
+  - name: Enrollment
+    description: Course enrollment and membership
+  - name: Recordings
+    description: Live class recordings management
+  - name: Batches
+    description: Batch management and scheduling
+  - name: Quizzes
+    description: Quiz submissions and assessments
+  - name: Authentication
+    description: User authentication and registration
+
+paths:
+  # Course Management
+  /lms.lms.utils.get_courses:
+    $ref: './paths/courses.yaml#/~1lms.lms.utils.get_courses'
+  /lms.lms.utils.get_course_details:
+    $ref: './paths/courses.yaml#/~1lms.lms.utils.get_course_details'
+  /lms.lms.utils.get_course_outline:
+    $ref: './paths/courses.yaml#/~1lms.lms.utils.get_course_outline'
+  /lms.lms.utils.get_related_courses:
+    $ref: './paths/courses.yaml#/~1lms.lms.utils.get_related_courses'
+  /lms.lms.utils.get_tags:
+    $ref: './paths/courses.yaml#/~1lms.lms.utils.get_tags'
+  /lms.lms.utils.get_reviews:
+    $ref: './paths/courses.yaml#/~1lms.lms.utils.get_reviews'
+  /lms.lms.doctype.lms_course_review.lms_course_review.submit_review:
+    $ref: './paths/courses.yaml#/~1lms.lms.doctype.lms_course_review.lms_course_review.submit_review'
+  /lms.lms.api.delete_course:
+    $ref: './paths/courses.yaml#/~1lms.lms.api.delete_course'
+
+  # Lesson Management
+  /lms.lms.utils.get_lesson:
+    $ref: './paths/lessons.yaml#/~1lms.lms.utils.get_lesson'
+  /lms.lms.doctype.course_lesson.course_lesson.save_progress:
+    $ref: './paths/lessons.yaml#/~1lms.lms.doctype.course_lesson.course_lesson.save_progress'
+  /lms.lms.api.mark_lesson_progress:
+    $ref: './paths/lessons.yaml#/~1lms.lms.api.mark_lesson_progress'
+  /lms.lms.api.delete_lesson:
+    $ref: './paths/lessons.yaml#/~1lms.lms.api.delete_lesson'
+
+  # Enrollment
+  /lms.lms.utils.enroll_in_course:
+    $ref: './paths/enrollments.yaml#/~1lms.lms.utils.enroll_in_course'
+  /lms.lms.utils.get_membership:
+    $ref: './paths/enrollments.yaml#/~1lms.lms.utils.get_membership'
+  /lms.lms.api.get_course_progress_distribution:
+    $ref: './paths/enrollments.yaml#/~1lms.lms.api.get_course_progress_distribution'
+
+  # Recordings
+  /lms.lms.api.get_course_recordings:
+    $ref: './paths/recordings.yaml#/~1lms.lms.api.get_course_recordings'
+  /lms.lms.api.get_recording_embed:
+    $ref: './paths/recordings.yaml#/~1lms.lms.api.get_recording_embed'
+  /lms.lms.api.trigger_recording_sync:
+    $ref: './paths/recordings.yaml#/~1lms.lms.api.trigger_recording_sync'
+  /lms.lms.webhooks.vimeo_webhook.handle_vimeo_event:
+    $ref: './paths/recordings.yaml#/~1lms.lms.webhooks.vimeo_webhook.handle_vimeo_event'
+
+  # Batch Management
+  /lms.lms.utils.get_batches:
+    $ref: './paths/batches.yaml#/~1lms.lms.utils.get_batches'
+  /lms.lms.utils.get_batch_details:
+    $ref: './paths/batches.yaml#/~1lms.lms.utils.get_batch_details'
+  /lms.lms.doctype.lms_batch.lms_batch.get_batch_timetable:
+    $ref: './paths/batches.yaml#/~1lms.lms.doctype.lms_batch.lms_batch.get_batch_timetable'
+  /lms.lms.utils.enroll_in_batch:
+    $ref: './paths/batches.yaml#/~1lms.lms.utils.enroll_in_batch'
+  /lms.lms.doctype.lms_batch.lms_batch.create_live_class:
+    $ref: './paths/batches.yaml#/~1lms.lms.doctype.lms_batch.lms_batch.create_live_class'
+  /lms.lms.api.delete_batch:
+    $ref: './paths/batches.yaml#/~1lms.lms.api.delete_batch'
+
+  # Quizzes & Assignments
+  /lms.lms.doctype.lms_quiz.lms_quiz.quiz_summary:
+    $ref: './paths/quizzes.yaml#/~1lms.lms.doctype.lms_quiz.lms_quiz.quiz_summary'
+  /lms.lms.doctype.lms_assignment_submission.lms_assignment_submission.upload_assignment:
+    $ref: './paths/quizzes.yaml#/~1lms.lms.doctype.lms_assignment_submission.lms_assignment_submission.upload_assignment'
+  /lms.lms.utils.get_assessments:
+    $ref: './paths/quizzes.yaml#/~1lms.lms.utils.get_assessments'
+
+  # Authentication & User
+  /lms.lms.api.get_user_info:
+    get:
+      summary: Get current user information
+      description: Returns information about the currently logged-in user, including roles and permissions.
+      tags:
+        - Authentication
+      security:
+        - SessionAuth: []
+        - {}
+      responses:
+        '200':
+          description: User information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfo'
+              example:
+                name: "user@example.com"
+                email: "user@example.com"
+                full_name: "John Doe"
+                user_image: "/files/user.jpg"
+                is_admin: false
+                is_moderator: false
+                is_course_creator: true
+                is_teacher: false
+                is_student: true
+                roles: ["Course Creator", "LMS Student"]
+
+  /lms.lms.user.sign_up:
+    post:
+      summary: Register new user
+      description: Create a new user account in the LMS.
+      tags:
+        - Authentication
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - full_name
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User email address
+                full_name:
+                  type: string
+                  description: User's full name
+                verify_terms:
+                  type: boolean
+                  description: Terms and conditions acceptance
+                user_category:
+                  type: string
+                  description: User category/role
+            example:
+              email: "newuser@example.com"
+              full_name: "Jane Smith"
+              verify_terms: true
+              user_category: "Student"
+      responses:
+        '200':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status_code:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Registration successful"
+        '400':
+          description: Registration failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: sid
+      description: |
+        Frappe session cookie. Obtained after successful login.
+        The cookie is automatically included in requests from the browser.
+
+  schemas:
+    $ref: './schemas/models.yaml#/components/schemas'
+
+  responses:
+    $ref: './schemas/responses.yaml#/components/responses'
+

@@ -1,0 +1,62 @@
+components:
+  responses:
+    Success:
+      description: Operation successful
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Operation completed successfully"
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            _server_messages: '["Please login to continue"]'
+            exception: "AuthenticationError"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            _server_messages: '["You do not have permission to access this resource"]'
+            exception: "PermissionError"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            _server_messages: '["Document not found"]'
+            exception: "DoesNotExistError"
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            _server_messages: '["Invalid input data"]'
+            exception: "ValidationError"
+
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            _server_messages: '["An unexpected error occurred"]'
+            exception: "InternalServerError"
