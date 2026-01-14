@@ -2204,13 +2204,10 @@ def _find_live_class_for_vimeo_video(video_title, video_description, created_tim
 			live_class = frappe.db.get_value(
 				"LMS Live Class",
 				{"meeting_id": meeting_id},
-				["name", "batch_name", "host", "title", "date", "time", "course"],
+				["name", "batch_name", "host", "title", "date", "time"],
 				as_dict=True,
 			)
 			if live_class:
-				# Get course from batch if not directly set
-				if not live_class.get("course"):
-					live_class["course"] = get_course_from_batch(live_class.batch_name)
 				frappe.logger().info(f"[n8n Vimeo] Matched by meeting_id: {meeting_id}")
 				return (frappe.get_doc("LMS Live Class", live_class.name), "meeting_id")
 
@@ -2234,13 +2231,11 @@ def _find_live_class_for_vimeo_video(video_title, video_description, created_tim
 	live_class = frappe.db.get_value(
 		"LMS Live Class",
 		{"title": video_title, "date": recording_date},
-		["name", "batch_name", "host", "title", "date", "time", "course"],
+		["name", "batch_name", "host", "title", "date", "time"],
 		as_dict=True,
 	)
 
 	if live_class:
-		if not live_class.get("course"):
-			live_class["course"] = get_course_from_batch(live_class.batch_name)
 		frappe.logger().info(f"[n8n Vimeo] Matched by exact title + date")
 		return (frappe.get_doc("LMS Live Class", live_class.name), "title_and_date")
 
