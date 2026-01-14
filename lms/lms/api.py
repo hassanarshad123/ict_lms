@@ -2419,6 +2419,51 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 	return created_lessons
 
 
+def _add_vimeo_privacy_parameters(video_url):
+	"""
+	Add privacy parameters to Vimeo embed URL to hide sharing options and URL.
+
+	Privacy parameters:
+	- title=0: Hide video title
+	- byline=0: Hide uploader name
+	- portrait=0: Hide uploader portrait
+	- speed=0: Hide speed controls
+	- pip=0: Disable picture-in-picture
+	- share=0: Hide share button
+	- transparent=0: Disable transparent background
+
+	Args:
+		video_url: Original Vimeo player embed URL
+
+	Returns:
+		str: URL with privacy parameters added
+	"""
+	if not video_url or "vimeo.com" not in video_url.lower():
+		return video_url
+
+	# Privacy parameters to prevent sharing and hide URL
+	privacy_params = [
+		"title=0",
+		"byline=0",
+		"portrait=0",
+		"speed=0",
+		"pip=0",
+		"share=0",
+		"transparent=0"
+	]
+
+	# Check if URL already has parameters
+	separator = "&" if "?" in video_url else "?"
+
+	# Add privacy parameters
+	privacy_query = separator + "&".join(privacy_params)
+	secure_url = video_url + privacy_query
+
+	frappe.logger().info(f"[Vimeo Privacy] Added privacy parameters to URL")
+
+	return secure_url
+
+
 def _build_recording_lesson_body(live_class, video_url, recording=None):
 	"""
 	Build the lesson body content with Vimeo embed using {{ Embed }} macro.
@@ -2432,6 +2477,9 @@ def _build_recording_lesson_body(live_class, video_url, recording=None):
 		str: Markdown content for lesson body with {{ Embed }} macro
 	"""
 	from frappe.utils import format_date
+
+	# Add privacy parameters to Vimeo URL to hide sharing options and URL
+	video_url = _add_vimeo_privacy_parameters(video_url)
 
 	# Build metadata sections
 	metadata_lines = []

@@ -422,10 +422,28 @@ const props = defineProps({
 	},
 })
 
+// Prevent right-click and context menu for content protection
+const preventContextMenu = (e) => {
+	e.preventDefault()
+	return false
+}
+
+// Prevent text selection and copy
+const preventSelection = (e) => {
+	e.preventDefault()
+	return false
+}
+
 onMounted(() => {
 	startTimer()
 	sidebarStore.isSidebarCollapsed = true
 	document.addEventListener('fullscreenchange', attachFullscreenEvent)
+
+	// Add content protection event listeners
+	document.addEventListener('contextmenu', preventContextMenu)
+	document.addEventListener('selectstart', preventSelection)
+	document.addEventListener('copy', preventSelection)
+
 	socket.on('update_lesson_progress', (data) => {
 		if (data.course === props.courseName) {
 			lessonProgress.value = data.progress
@@ -447,6 +465,12 @@ const attachFullscreenEvent = () => {
 
 onBeforeUnmount(() => {
 	document.removeEventListener('fullscreenchange', attachFullscreenEvent)
+
+	// Remove content protection event listeners
+	document.removeEventListener('contextmenu', preventContextMenu)
+	document.removeEventListener('selectstart', preventSelection)
+	document.removeEventListener('copy', preventSelection)
+
 	sidebarStore.isSidebarCollapsed = false
 	trackVideoWatchDuration()
 })
@@ -913,6 +937,24 @@ usePageMeta(() => {
 })
 </script>
 <style>
+/* Content protection - prevent text selection and copying */
+body {
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+}
+
+/* Prevent drag-and-drop of images */
+img {
+	-webkit-user-drag: none;
+	-khtml-user-drag: none;
+	-moz-user-drag: none;
+	-o-user-drag: none;
+	user-drag: none;
+	pointer-events: none;
+}
+
 .avatar-group {
 	display: inline-flex;
 	align-items: center;

@@ -103,7 +103,7 @@ import {
 	Tooltip,
 	usePageMeta,
 } from 'frappe-ui'
-import { computed, inject, watch } from 'vue'
+import { computed, inject, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Users, Star } from 'lucide-vue-next'
 import { sessionStore } from '@/stores/session'
 import { useRouter } from 'vue-router'
@@ -181,8 +181,52 @@ usePageMeta(() => {
 		icon: brand.favicon,
 	}
 })
+
+// Prevent right-click and context menu for content protection
+const preventContextMenu = (e) => {
+	e.preventDefault()
+	return false
+}
+
+// Prevent text selection and copy
+const preventSelection = (e) => {
+	e.preventDefault()
+	return false
+}
+
+onMounted(() => {
+	// Add content protection event listeners
+	document.addEventListener('contextmenu', preventContextMenu)
+	document.addEventListener('selectstart', preventSelection)
+	document.addEventListener('copy', preventSelection)
+})
+
+onBeforeUnmount(() => {
+	// Remove content protection event listeners
+	document.removeEventListener('contextmenu', preventContextMenu)
+	document.removeEventListener('selectstart', preventSelection)
+	document.removeEventListener('copy', preventSelection)
+})
 </script>
 <style>
+/* Content protection - prevent text selection and copying */
+body {
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+}
+
+/* Prevent drag-and-drop of images */
+img {
+	-webkit-user-drag: none;
+	-khtml-user-drag: none;
+	-moz-user-drag: none;
+	-o-user-drag: none;
+	user-drag: none;
+	pointer-events: none;
+}
+
 .avatar-group {
 	display: inline-flex;
 	align-items: center;
