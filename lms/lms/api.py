@@ -2372,8 +2372,7 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 				try:
 					# Update the existing lesson with the recording URL
 					lesson_doc = frappe.get_doc("Course Lesson", existing_lesson)
-					lesson_doc.youtube = video_url
-					# Update body with new content
+					# Update body with new content (don't use youtube field for Vimeo)
 					lesson_doc.body = _build_recording_lesson_body(live_class, video_url, recording)
 					lesson_doc.save(ignore_permissions=True)
 					created_lessons.append(existing_lesson)
@@ -2392,10 +2391,7 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 			lesson.course = course_name
 			lesson.include_in_preview = 0  # Not included in preview
 
-			# Set the video URL
-			lesson.youtube = video_url
-
-			# Set body content with video and metadata
+			# Set body content with video embed using {{ Embed }} macro
 			lesson.body = _build_recording_lesson_body(live_class, video_url, recording)
 
 			lesson.insert(ignore_permissions=True)
@@ -2427,7 +2423,7 @@ def create_lesson_from_recording(live_class_name, video_url=None, recording=None
 
 def _build_recording_lesson_body(live_class, video_url, recording=None):
 	"""
-	Build the HTML body content for a recording lesson.
+	Build the lesson body content with Vimeo embed using {{ Embed }} macro.
 
 	Args:
 		live_class: LMS Live Class document
@@ -2435,47 +2431,46 @@ def _build_recording_lesson_body(live_class, video_url, recording=None):
 		recording: LMS Course Recording document (optional)
 
 	Returns:
-		str: HTML content for lesson body
+		str: Markdown content for lesson body with {{ Embed }} macro
 	"""
 	from frappe.utils import format_date
 
 	# Build metadata sections
-	metadata_parts = []
+	metadata_lines = []
 
 	# Date
 	if live_class.date:
-		metadata_parts.append(
-			f'<p><strong>Recorded on:</strong> {format_date(live_class.date, "medium")}</p>'
-		)
+		metadata_lines.append(f'**Recorded on:** {format_date(live_class.date, "medium")}')
 
 	# Duration
 	if recording and recording.duration:
 		duration_formatted = recording.get("duration_formatted") or f"{recording.duration // 60} minutes"
-		metadata_parts.append(f'<p><strong>Duration:</strong> {duration_formatted}</p>')
+		metadata_lines.append(f'**Duration:** {duration_formatted}')
 	elif live_class.duration:
-		metadata_parts.append(f'<p><strong>Duration:</strong> {live_class.duration} minutes</p>')
+		metadata_lines.append(f'**Duration:** {live_class.duration} minutes')
 
 	# Instructor
 	if recording and recording.instructor:
 		instructor_name = frappe.db.get_value("User", recording.instructor, "full_name")
 		if instructor_name:
-			metadata_parts.append(f'<p><strong>Instructor:</strong> {instructor_name}</p>')
+			metadata_lines.append(f'**Instructor:** {instructor_name}')
 
-	# Description
-	description = ""
+	# Build complete body using {{ Embed }} macro
+	body_parts = [
+		f'{{{{ Embed("{video_url}") }}}}',
+		'',  # Empty line for spacing
+	]
+
+	# Add metadata
+	if metadata_lines:
+		body_parts.extend(metadata_lines)
+		body_parts.append('')  # Empty line
+
+	# Add description
 	if live_class.description:
-		description = f'<p>{live_class.description}</p>'
+		body_parts.append(live_class.description)
 
-	# Build complete body
-	body = f"""
-<div class="embed-responsive embed-responsive-16by9">
-	<iframe class="embed-responsive-item" src="{video_url}" allowfullscreen></iframe>
-</div>
-
-{''.join(metadata_parts)}
-{description}
-"""
-
+	body = '\n\n'.join(body_parts)
 	return body
 
 

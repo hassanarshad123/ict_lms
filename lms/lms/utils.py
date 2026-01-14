@@ -192,7 +192,7 @@ def get_lesson_icon(body, content):
 
 	macros = find_macros(body)
 	for macro in macros:
-		if macro[0] == "YouTubeVideo" or macro[0] == "Video":
+		if macro[0] == "YouTubeVideo" or macro[0] == "Video" or macro[0] == "Embed":
 			return "icon-youtube"
 		elif macro[0] == "Quiz":
 			return "icon-quiz"
