@@ -1821,7 +1821,12 @@ def get_my_live_classes():
 
 	if len(live_class_details):
 		for live_class in live_class_details:
-			live_class.course_title = frappe.db.get_value("LMS Course", live_class.course, "title")
+			# Get course from batch (LMS Live Class doesn't have course field)
+			course = get_course_from_batch(live_class.batch_name) if live_class.get("batch_name") else None
+			if course:
+				live_class.course_title = frappe.db.get_value("LMS Course", course, "title")
+			else:
+				live_class.course_title = ""
 
 			my_live_classes.append(live_class)
 
@@ -2142,8 +2147,8 @@ def _create_or_update_recording_from_n8n(live_class, video_id, video_url, durati
 
 	# Set all required fields
 	recording.title = live_class.title
-	# Ensure course is set - get from batch if not on live_class
-	course = live_class.course or get_course_from_batch(live_class.batch_name) if live_class.batch_name else None
+	# Get course from batch (LMS Live Class doesn't have a course field)
+	course = get_course_from_batch(live_class.batch_name) if live_class.batch_name else None
 	if not course:
 		frappe.logger().error(f"[n8n Vimeo] No course found for live class {live_class.name} (batch: {live_class.batch_name})")
 		raise ValueError(f"Cannot create recording: No course associated with live class {live_class.name}")
@@ -2243,14 +2248,13 @@ def _find_live_class_for_vimeo_video(video_title, video_description, created_tim
 	all_classes_on_date = frappe.get_all(
 		"LMS Live Class",
 		filters={"date": recording_date},
-		fields=["name", "batch_name", "host", "title", "date", "time", "course"],
+		fields=["name", "batch_name", "host", "title", "date", "time"],
 	)
 
 	for lc in all_classes_on_date:
 		# Check if the live class title is contained in the video title or vice versa
 		if video_title.lower() in lc.title.lower() or lc.title.lower() in video_title.lower():
-			if not lc.get("course"):
-				lc["course"] = get_course_from_batch(lc.batch_name)
+			lc["course"] = get_course_from_batch(lc.batch_name)
 			frappe.logger().info(f"[n8n Vimeo] Matched by title contains + date")
 			return (frappe.get_doc("LMS Live Class", lc.name), "title_contains")
 
@@ -2264,13 +2268,12 @@ def _find_live_class_for_vimeo_video(video_title, video_description, created_tim
 			"title": video_title,
 			"date": ["between", [date_before, date_after]],
 		},
-		fields=["name", "batch_name", "host", "title", "date", "time", "course"],
+		fields=["name", "batch_name", "host", "title", "date", "time"],
 	)
 
 	if live_classes_nearby:
 		lc = live_classes_nearby[0]
-		if not lc.get("course"):
-			lc["course"] = get_course_from_batch(lc.batch_name)
+		lc["course"] = get_course_from_batch(lc.batch_name)
 		frappe.logger().info(f"[n8n Vimeo] Matched by title + date within ±1 day")
 		return (frappe.get_doc("LMS Live Class", lc.name), "title_and_date_nearby")
 
@@ -2764,13 +2767,6 @@ def process_vimeo_recording():
 			}
 
 		frappe.logger().info(f"[n8n Vimeo] Matched Live Class: {live_class.name} using {match_method}")
-
-		# Ensure live_class has course field populated
-		if not live_class.course and live_class.batch_name:
-			course = get_course_from_batch(live_class.batch_name)
-			if course:
-				live_class.course = course
-				frappe.logger().info(f"[n8n Vimeo] Set course {course} on live class {live_class.name} from batch")
 
 		# Create/update LMS Course Recording document
 		recording = None
