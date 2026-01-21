@@ -7,9 +7,27 @@ import frappe
 from frappe import _
 from frappe.email.doctype.email_template.email_template import get_email_template
 from frappe.model.document import Document
+from frappe.utils import add_days, getdate, now_datetime, nowdate
 
 
 class LMSBatchEnrollment(Document):
+	def before_insert(self):
+		# Set enrollment date if not set
+		if not self.enrollment_date:
+			self.enrollment_date = nowdate()
+
+		# Set access start date if not set
+		if not self.access_start_date:
+			self.access_start_date = self.enrollment_date
+
+		# Calculate access end date if time-limited and duration is provided
+		if self.is_time_limited and self.access_duration_days and not self.access_end_date:
+			self.access_end_date = add_days(self.access_start_date, self.access_duration_days)
+
+		# Initialize status
+		if not self.status:
+			self.status = "Active"
+
 	def after_insert(self):
 		send_confirmation_email(self)
 		self.add_member_to_live_class()
@@ -21,6 +39,32 @@ class LMSBatchEnrollment(Document):
 		self.validate_self_enrollment()
 		self.validate_seat_availability()
 		self.validate_course_enrollment()
+		self.validate_time_limited_fields()
+		self.validate_dates()
+
+	def validate_time_limited_fields(self):
+		"""Validate time-limited enrollment fields"""
+		if self.is_time_limited:
+			if not self.access_end_date and not self.access_duration_days:
+				frappe.throw(_("For time-limited enrollments, either Access End Date or Access Duration (Days) is required."))
+
+			# Calculate access_end_date from duration if not provided
+			if self.access_duration_days and not self.access_end_date:
+				if not self.access_start_date:
+					self.access_start_date = nowdate()
+				self.access_end_date = add_days(self.access_start_date, self.access_duration_days)
+
+			# Calculate duration from dates if not provided
+			if self.access_end_date and not self.access_duration_days:
+				if not self.access_start_date:
+					self.access_start_date = nowdate()
+				self.access_duration_days = (getdate(self.access_end_date) - getdate(self.access_start_date)).days
+
+	def validate_dates(self):
+		"""Validate date fields"""
+		if self.access_start_date and self.access_end_date:
+			if getdate(self.access_end_date) < getdate(self.access_start_date):
+				frappe.throw(_("Access End Date cannot be before Access Start Date."))
 
 	def validate_owner(self):
 		if self.owner == self.member:
@@ -141,6 +185,85 @@ class LMSBatchEnrollment(Document):
 				for participant in participants:
 					frappe.delete_doc("Event Participants", participant, ignore_permissions=True)
 
+	def has_active_access(self):
+		"""Check if the enrollment has active access"""
+		if self.status in ["Expired", "Manually Removed"]:
+			return False
+
+		if not self.is_time_limited:
+			return True
+
+		if self.access_end_date and getdate(self.access_end_date) < getdate(nowdate()):
+			return False
+
+		return True
+
+	def extend_access(self, extension_days, reason=None, extended_by=None):
+		"""Extend the enrollment access by specified days"""
+		if not self.is_time_limited:
+			frappe.throw(_("Cannot extend access for non-time-limited enrollments."))
+
+		if not extension_days or extension_days <= 0:
+			frappe.throw(_("Extension days must be a positive number."))
+
+		previous_end_date = self.access_end_date
+
+		# Calculate new end date
+		# If already expired, extend from today; otherwise extend from current end date
+		if self.access_end_date and getdate(self.access_end_date) < getdate(nowdate()):
+			new_end_date = add_days(nowdate(), extension_days)
+		else:
+			new_end_date = add_days(self.access_end_date or nowdate(), extension_days)
+
+		# Update fields
+		self.access_end_date = new_end_date
+		self.extended_count = (self.extended_count or 0) + 1
+		self.last_extended_on = now_datetime()
+		self.status = "Extended"
+
+		# Update total duration
+		if self.access_start_date:
+			self.access_duration_days = (getdate(new_end_date) - getdate(self.access_start_date)).days
+
+		# Add to extension history
+		self.append("extension_history", {
+			"extended_on": now_datetime(),
+			"extended_by": extended_by or frappe.session.user,
+			"previous_end_date": previous_end_date,
+			"new_end_date": new_end_date,
+			"extension_days": extension_days,
+			"reason": reason
+		})
+
+		self.save()
+
+		return {
+			"success": True,
+			"previous_end_date": str(previous_end_date) if previous_end_date else None,
+			"new_end_date": str(new_end_date),
+			"extended_count": self.extended_count
+		}
+
+	def mark_as_expired(self):
+		"""Mark enrollment as expired"""
+		if self.status != "Expired":
+			self.status = "Expired"
+			self.save()
+
+			# Remove course enrollments and live class access
+			self.remove_course_enrollments()
+			self.remove_member_from_live_class()
+
+	def remove_from_batch(self, reason=None):
+		"""Manually remove student from batch"""
+		self.status = "Manually Removed"
+		self.removal_reason = reason
+		self.save()
+
+		# Remove course enrollments and live class access
+		self.remove_course_enrollments()
+		self.remove_member_from_live_class()
+
 
 @frappe.whitelist()
 def send_confirmation_email(doc):
@@ -186,6 +309,11 @@ def send_mail(doc):
 		"name": batch.name,
 	}
 
+	# Add time-limited access info if applicable
+	if doc.get("is_time_limited") and doc.get("access_end_date"):
+		args["access_end_date"] = doc.access_end_date
+		args["is_time_limited"] = True
+
 	if custom_template:
 		email_template = get_email_template(custom_template, args)
 		subject = email_template.get("subject")
@@ -200,3 +328,29 @@ def send_mail(doc):
 		header=[_(batch.title), "green"],
 		retry=3,
 	)
+
+
+def check_batch_access(user, batch):
+	"""Check if user has active access to a batch"""
+	enrollment = frappe.db.get_value(
+		"LMS Batch Enrollment",
+		{"member": user, "batch": batch},
+		["name", "is_time_limited", "status", "access_end_date"],
+		as_dict=True
+	)
+
+	if not enrollment:
+		return False
+
+	if enrollment.status in ["Expired", "Manually Removed"]:
+		return False
+
+	if not enrollment.is_time_limited:
+		return True
+
+	if enrollment.access_end_date and getdate(enrollment.access_end_date) < getdate(nowdate()):
+		# Auto-expire if past end date
+		frappe.db.set_value("LMS Batch Enrollment", enrollment.name, "status", "Expired")
+		return False
+
+	return True

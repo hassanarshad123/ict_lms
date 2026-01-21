@@ -12,7 +12,21 @@
   "batch",
   "payment",
   "source",
-  "confirmation_email_sent"
+  "confirmation_email_sent",
+  "section_break_time_limited",
+  "is_time_limited",
+  "status",
+  "column_break_dates",
+  "enrollment_date",
+  "access_start_date",
+  "access_end_date",
+  "access_duration_days",
+  "section_break_extension",
+  "extended_count",
+  "last_extended_on",
+  "removal_reason",
+  "section_break_extension_history",
+  "extension_history"
  ],
  "fields": [
   {
@@ -69,12 +83,99 @@
    "label": "Batch",
    "options": "LMS Batch",
    "reqd": 1
+  },
+  {
+   "fieldname": "section_break_time_limited",
+   "fieldtype": "Section Break",
+   "label": "Time-Limited Access"
+  },
+  {
+   "default": "0",
+   "description": "If checked, this enrollment will expire after the specified access end date",
+   "fieldname": "is_time_limited",
+   "fieldtype": "Check",
+   "label": "Is Time Limited"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nExpired\nExtended\nManually Removed"
+  },
+  {
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "enrollment_date",
+   "fieldtype": "Date",
+   "label": "Enrollment Date",
+   "read_only": 1
+  },
+  {
+   "description": "When the student's access begins",
+   "fieldname": "access_start_date",
+   "fieldtype": "Date",
+   "label": "Access Start Date"
+  },
+  {
+   "description": "When the student's access expires (for time-limited enrollments)",
+   "fieldname": "access_end_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Access End Date"
+  },
+  {
+   "description": "Duration of access in days",
+   "fieldname": "access_duration_days",
+   "fieldtype": "Int",
+   "label": "Access Duration (Days)"
+  },
+  {
+   "fieldname": "section_break_extension",
+   "fieldtype": "Section Break",
+   "label": "Extension Details"
+  },
+  {
+   "default": "0",
+   "description": "Number of times this enrollment has been extended",
+   "fieldname": "extended_count",
+   "fieldtype": "Int",
+   "label": "Extended Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_extended_on",
+   "fieldtype": "Datetime",
+   "label": "Last Extended On",
+   "read_only": 1
+  },
+  {
+   "description": "Reason for manual removal (if applicable)",
+   "fieldname": "removal_reason",
+   "fieldtype": "Small Text",
+   "label": "Removal Reason"
+  },
+  {
+   "fieldname": "section_break_extension_history",
+   "fieldtype": "Section Break",
+   "label": "Extension History"
+  },
+  {
+   "fieldname": "extension_history",
+   "fieldtype": "Table",
+   "label": "Extension History",
+   "options": "LMS Enrollment Extension",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-04 12:53:38.246250",
- "modified_by": "sayali@frappe.io",
+ "modified": "2025-01-21 12:00:00.000000",
+ "modified_by": "Administrator",
  "module": "LMS",
  "name": "LMS Batch Enrollment",
  "owner": "Administrator",

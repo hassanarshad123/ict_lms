@@ -26,6 +26,7 @@ from frappe.utils import (
 	get_datetime,
 	getdate,
 	now,
+	nowdate,
 )
 from frappe.utils.response import Response
 
@@ -68,6 +69,80 @@ def get_user_info():
 	if user.is_fc_site and user.is_system_manager:
 		user.site_info = current_site_info()
 	return user
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def api_login(usr, pwd):
+	"""
+	API login endpoint for token-based authentication.
+	Returns api_key and api_secret for use with Authorization header.
+
+	Args:
+		usr: User email or username
+		pwd: User password
+
+	Returns:
+		dict: Contains api_key, api_secret, and user info on success
+
+	Usage:
+		POST /api/method/lms.lms.api.api_login
+		Body: {"usr": "user@example.com", "pwd": "password123"}
+
+		Then use token for authenticated requests:
+		Authorization: token <api_key>:<api_secret>
+	"""
+	from frappe.utils.password import check_password as validate_password
+
+	# Validate required fields
+	if not usr:
+		frappe.throw(_("Email or username is required"))
+	if not pwd:
+		frappe.throw(_("Password is required"))
+
+	# Validate credentials
+	try:
+		user = validate_password(usr, pwd)
+	except frappe.AuthenticationError:
+		frappe.throw(_("Invalid email or password"), frappe.AuthenticationError)
+
+	# Get user document
+	user_doc = frappe.get_doc("User", user)
+
+	# Check if user is enabled
+	if not user_doc.enabled:
+		frappe.throw(_("Your account has been disabled"), frappe.AuthenticationError)
+
+	# Generate API secret (regenerated each login for security)
+	api_secret = frappe.generate_hash(length=15)
+
+	# Generate API key if not exists
+	if not user_doc.api_key:
+		user_doc.api_key = frappe.generate_hash(length=15)
+
+	# Update API secret
+	user_doc.api_secret = api_secret
+	user_doc.flags.ignore_permissions = True
+	user_doc.save()
+	frappe.db.commit()
+
+	# Get user roles
+	roles = frappe.get_roles(user)
+
+	return {
+		"message": "Login successful",
+		"api_key": user_doc.api_key,
+		"api_secret": api_secret,
+		"user": {
+			"name": user_doc.name,
+			"email": user_doc.email,
+			"full_name": user_doc.full_name,
+			"username": user_doc.username,
+			"user_image": user_doc.user_image,
+			"is_admin": "Moderator" in roles,
+			"is_student": "LMS Student" in roles,
+			"roles": roles,
+		},
+	}
 
 
 @frappe.whitelist(allow_guest=True)
@@ -3152,3 +3227,587 @@ def get_openapi_spec():
 	except Exception as e:
 		frappe.log_error(f"Error loading OpenAPI spec: {str(e)}", "OpenAPI Spec Error")
 		frappe.throw(_("Error loading OpenAPI specification"))
+
+
+# ============================================================================
+# TIME-LIMITED BATCH ENROLLMENT APIs
+# ============================================================================
+
+@frappe.whitelist()
+def enroll_student_with_duration(batch, member, access_duration_days, access_start_date=None, payment_name=None):
+	"""
+	Enroll a student into a batch with time-limited access.
+
+	Args:
+		batch (str): The batch ID to enroll in
+		member (str): The user ID or email of the student to enroll
+		access_duration_days (int): Number of days the student will have access
+		access_start_date (str, optional): When access starts (defaults to today)
+		payment_name (str, optional): Payment document name for paid batches
+
+	Returns:
+		dict: Enrollment details including enrollment ID, access dates, and status
+	"""
+	# Validate inputs
+	if not batch:
+		frappe.throw(_("Batch is required"))
+
+	if not member:
+		frappe.throw(_("Member is required"))
+
+	if not access_duration_days:
+		frappe.throw(_("Access duration (days) is required"))
+
+	access_duration_days = cint(access_duration_days)
+	if access_duration_days <= 0:
+		frappe.throw(_("Access duration must be a positive number"))
+
+	# Validate batch exists
+	if not frappe.db.exists("LMS Batch", batch):
+		frappe.throw(_("The specified batch does not exist."))
+
+	# Validate member exists
+	if not frappe.db.exists("User", member):
+		frappe.throw(_("The specified user does not exist."))
+
+	# Check permissions
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "Batch Evaluator", "System Manager"]):
+		frappe.throw(_("You do not have permission to enroll students."))
+
+	# Check for existing enrollment
+	existing = frappe.db.exists("LMS Batch Enrollment", {"batch": batch, "member": member})
+	if existing:
+		frappe.throw(_("This member is already enrolled in this batch."))
+
+	# Get payment details if provided
+	payment_doc = None
+	if payment_name:
+		payment_doc = frappe.get_doc("LMS Payment", payment_name)
+
+	# Set access start date
+	if not access_start_date:
+		access_start_date = nowdate()
+
+	# Calculate access end date
+	access_end_date = add_days(access_start_date, access_duration_days)
+
+	# Create enrollment
+	enrollment = frappe.new_doc("LMS Batch Enrollment")
+	enrollment.update({
+		"member": member,
+		"batch": batch,
+		"is_time_limited": 1,
+		"enrollment_date": nowdate(),
+		"access_start_date": access_start_date,
+		"access_end_date": access_end_date,
+		"access_duration_days": access_duration_days,
+		"status": "Active"
+	})
+
+	if payment_doc:
+		enrollment.update({
+			"payment": payment_doc.name,
+			"source": payment_doc.source if hasattr(payment_doc, "source") else None,
+		})
+
+	enrollment.insert()
+
+	return {
+		"success": True,
+		"message": _("Student enrolled successfully with time-limited access"),
+		"enrollment": enrollment.name,
+		"member": member,
+		"batch": batch,
+		"access_start_date": str(access_start_date),
+		"access_end_date": str(access_end_date),
+		"access_duration_days": access_duration_days,
+		"status": enrollment.status
+	}
+
+
+@frappe.whitelist()
+def extend_batch_access(enrollment, extension_days, reason=None):
+	"""
+	Extend a student's batch access by specified number of days.
+
+	Args:
+		enrollment (str): The enrollment ID
+		extension_days (int): Number of days to extend the access
+		reason (str, optional): Reason for the extension
+
+	Returns:
+		dict: Extension details including previous and new end dates
+	"""
+	# Validate inputs
+	if not enrollment:
+		frappe.throw(_("Enrollment ID is required"))
+
+	if not extension_days:
+		frappe.throw(_("Extension days is required"))
+
+	extension_days = cint(extension_days)
+	if extension_days <= 0:
+		frappe.throw(_("Extension days must be a positive number"))
+
+	# Check permissions
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "Batch Evaluator", "System Manager"]):
+		frappe.throw(_("You do not have permission to extend enrollment access."))
+
+	# Get enrollment
+	if not frappe.db.exists("LMS Batch Enrollment", enrollment):
+		frappe.throw(_("The specified enrollment does not exist."))
+
+	enrollment_doc = frappe.get_doc("LMS Batch Enrollment", enrollment)
+
+	# Validate it's a time-limited enrollment
+	if not enrollment_doc.is_time_limited:
+		frappe.throw(_("This enrollment is not time-limited. Extension is not applicable."))
+
+	# Check if enrollment was manually removed
+	if enrollment_doc.status == "Manually Removed":
+		frappe.throw(_("Cannot extend access for a manually removed enrollment. Please create a new enrollment instead."))
+
+	# Extend access
+	result = enrollment_doc.extend_access(
+		extension_days=extension_days,
+		reason=reason,
+		extended_by=frappe.session.user
+	)
+
+	return {
+		"success": True,
+		"message": _("Access extended successfully by {0} days").format(extension_days),
+		"enrollment": enrollment,
+		"previous_end_date": result["previous_end_date"],
+		"new_end_date": result["new_end_date"],
+		"extended_count": result["extended_count"],
+		"extended_by": frappe.session.user
+	}
+
+
+@frappe.whitelist()
+def remove_student_from_batch(enrollment, reason=None):
+	"""
+	Manually remove a student from a batch.
+
+	Args:
+		enrollment (str): The enrollment ID
+		reason (str, optional): Reason for removal
+
+	Returns:
+		dict: Removal confirmation
+	"""
+	# Validate inputs
+	if not enrollment:
+		frappe.throw(_("Enrollment ID is required"))
+
+	# Check permissions
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "Batch Evaluator", "System Manager"]):
+		frappe.throw(_("You do not have permission to remove students from batches."))
+
+	# Get enrollment
+	if not frappe.db.exists("LMS Batch Enrollment", enrollment):
+		frappe.throw(_("The specified enrollment does not exist."))
+
+	enrollment_doc = frappe.get_doc("LMS Batch Enrollment", enrollment)
+
+	# Check if already removed
+	if enrollment_doc.status == "Manually Removed":
+		frappe.throw(_("This enrollment has already been removed."))
+
+	# Get member info before removal
+	member = enrollment_doc.member
+	member_name = enrollment_doc.member_name
+	batch = enrollment_doc.batch
+
+	# Remove from batch
+	enrollment_doc.remove_from_batch(reason=reason)
+
+	return {
+		"success": True,
+		"message": _("Student removed from batch successfully"),
+		"enrollment": enrollment,
+		"member": member,
+		"member_name": member_name,
+		"batch": batch,
+		"reason": reason,
+		"removed_by": frappe.session.user
+	}
+
+
+@frappe.whitelist()
+def get_enrollment_status(enrollment):
+	"""
+	Get detailed status of an enrollment including access information.
+
+	Args:
+		enrollment (str): The enrollment ID
+
+	Returns:
+		dict: Detailed enrollment information
+	"""
+	# Validate inputs
+	if not enrollment:
+		frappe.throw(_("Enrollment ID is required"))
+
+	# Get enrollment
+	if not frappe.db.exists("LMS Batch Enrollment", enrollment):
+		frappe.throw(_("The specified enrollment does not exist."))
+
+	enrollment_doc = frappe.get_doc("LMS Batch Enrollment", enrollment)
+
+	# Calculate days remaining
+	days_remaining = None
+	is_expired = False
+	if enrollment_doc.is_time_limited and enrollment_doc.access_end_date:
+		end_date = getdate(enrollment_doc.access_end_date)
+		today = getdate(nowdate())
+		days_remaining = (end_date - today).days
+		is_expired = days_remaining < 0
+
+	# Get extension history
+	extension_history = []
+	for ext in enrollment_doc.extension_history:
+		extension_history.append({
+			"extended_on": str(ext.extended_on) if ext.extended_on else None,
+			"extended_by": ext.extended_by,
+			"previous_end_date": str(ext.previous_end_date) if ext.previous_end_date else None,
+			"new_end_date": str(ext.new_end_date) if ext.new_end_date else None,
+			"extension_days": ext.extension_days,
+			"reason": ext.reason
+		})
+
+	return {
+		"enrollment": enrollment_doc.name,
+		"member": enrollment_doc.member,
+		"member_name": enrollment_doc.member_name,
+		"batch": enrollment_doc.batch,
+		"status": enrollment_doc.status,
+		"is_time_limited": enrollment_doc.is_time_limited,
+		"enrollment_date": str(enrollment_doc.enrollment_date) if enrollment_doc.enrollment_date else None,
+		"access_start_date": str(enrollment_doc.access_start_date) if enrollment_doc.access_start_date else None,
+		"access_end_date": str(enrollment_doc.access_end_date) if enrollment_doc.access_end_date else None,
+		"access_duration_days": enrollment_doc.access_duration_days,
+		"days_remaining": days_remaining,
+		"is_expired": is_expired,
+		"has_active_access": enrollment_doc.has_active_access(),
+		"extended_count": enrollment_doc.extended_count or 0,
+		"last_extended_on": str(enrollment_doc.last_extended_on) if enrollment_doc.last_extended_on else None,
+		"removal_reason": enrollment_doc.removal_reason,
+		"extension_history": extension_history
+	}
+
+
+@frappe.whitelist()
+def get_expiring_enrollments(batch=None, days_until_expiry=7):
+	"""
+	Get enrollments that are expiring within the specified number of days.
+
+	Args:
+		batch (str, optional): Filter by specific batch
+		days_until_expiry (int, optional): Number of days to look ahead (default: 7)
+
+	Returns:
+		list: List of enrollments expiring soon
+	"""
+	# Check permissions
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "Batch Evaluator", "System Manager"]):
+		frappe.throw(_("You do not have permission to view expiring enrollments."))
+
+	days_until_expiry = cint(days_until_expiry)
+	if days_until_expiry < 0:
+		days_until_expiry = 7
+
+	today = getdate(nowdate())
+	expiry_date = add_days(today, days_until_expiry)
+
+	filters = {
+		"is_time_limited": 1,
+		"status": ["in", ["Active", "Extended"]],
+		"access_end_date": ["between", [today, expiry_date]]
+	}
+
+	if batch:
+		filters["batch"] = batch
+
+	enrollments = frappe.get_all(
+		"LMS Batch Enrollment",
+		filters=filters,
+		fields=[
+			"name",
+			"member",
+			"member_name",
+			"batch",
+			"status",
+			"access_start_date",
+			"access_end_date",
+			"access_duration_days",
+			"extended_count"
+		],
+		order_by="access_end_date asc"
+	)
+
+	# Add days remaining to each enrollment
+	for enrollment in enrollments:
+		if enrollment.access_end_date:
+			end_date = getdate(enrollment.access_end_date)
+			enrollment["days_remaining"] = (end_date - today).days
+			enrollment["access_end_date"] = str(enrollment.access_end_date)
+			enrollment["access_start_date"] = str(enrollment.access_start_date) if enrollment.access_start_date else None
+
+		# Get batch title
+		enrollment["batch_title"] = frappe.db.get_value("LMS Batch", enrollment.batch, "title")
+
+	return {
+		"success": True,
+		"total": len(enrollments),
+		"days_until_expiry": days_until_expiry,
+		"enrollments": enrollments
+	}
+
+
+@frappe.whitelist()
+def bulk_enroll_students_with_duration(batch, members, access_duration_days, access_start_date=None):
+	"""
+	Enroll multiple students into a batch with time-limited access.
+
+	Args:
+		batch (str): The batch ID to enroll in
+		members (list/str): List of user IDs or emails to enroll (can be JSON string)
+		access_duration_days (int): Number of days each student will have access
+		access_start_date (str, optional): When access starts (defaults to today)
+
+	Returns:
+		dict: Summary of enrollments created
+	"""
+	# Validate inputs
+	if not batch:
+		frappe.throw(_("Batch is required"))
+
+	if not members:
+		frappe.throw(_("Members list is required"))
+
+	# Parse members if JSON string
+	if isinstance(members, str):
+		try:
+			members = json.loads(members)
+		except json.JSONDecodeError:
+			# Try comma-separated format
+			members = [m.strip() for m in members.split(",") if m.strip()]
+
+	if not isinstance(members, list) or len(members) == 0:
+		frappe.throw(_("Members must be a non-empty list"))
+
+	if not access_duration_days:
+		frappe.throw(_("Access duration (days) is required"))
+
+	access_duration_days = cint(access_duration_days)
+	if access_duration_days <= 0:
+		frappe.throw(_("Access duration must be a positive number"))
+
+	# Check permissions
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "Batch Evaluator", "System Manager"]):
+		frappe.throw(_("You do not have permission to enroll students."))
+
+	# Validate batch exists
+	if not frappe.db.exists("LMS Batch", batch):
+		frappe.throw(_("The specified batch does not exist."))
+
+	# Set access start date
+	if not access_start_date:
+		access_start_date = nowdate()
+
+	# Calculate access end date
+	access_end_date = add_days(access_start_date, access_duration_days)
+
+	results = {
+		"success": [],
+		"failed": [],
+		"skipped": []
+	}
+
+	for member in members:
+		try:
+			# Validate member exists
+			if not frappe.db.exists("User", member):
+				results["failed"].append({
+					"member": member,
+					"reason": "User does not exist"
+				})
+				continue
+
+			# Check for existing enrollment
+			existing = frappe.db.exists("LMS Batch Enrollment", {"batch": batch, "member": member})
+			if existing:
+				results["skipped"].append({
+					"member": member,
+					"reason": "Already enrolled",
+					"enrollment": existing
+				})
+				continue
+
+			# Create enrollment
+			enrollment = frappe.new_doc("LMS Batch Enrollment")
+			enrollment.update({
+				"member": member,
+				"batch": batch,
+				"is_time_limited": 1,
+				"enrollment_date": nowdate(),
+				"access_start_date": access_start_date,
+				"access_end_date": access_end_date,
+				"access_duration_days": access_duration_days,
+				"status": "Active"
+			})
+			enrollment.insert()
+
+			results["success"].append({
+				"member": member,
+				"enrollment": enrollment.name
+			})
+
+		except Exception as e:
+			results["failed"].append({
+				"member": member,
+				"reason": str(e)
+			})
+
+	return {
+		"success": True,
+		"message": _("Bulk enrollment completed"),
+		"batch": batch,
+		"access_start_date": str(access_start_date),
+		"access_end_date": str(access_end_date),
+		"access_duration_days": access_duration_days,
+		"total_processed": len(members),
+		"enrolled": len(results["success"]),
+		"skipped": len(results["skipped"]),
+		"failed": len(results["failed"]),
+		"details": results
+	}
+
+
+@frappe.whitelist()
+def check_batch_enrollment_access(batch, member=None):
+	"""
+	Check if a user has active access to a batch.
+
+	Args:
+		batch (str): The batch ID
+		member (str, optional): The user ID (defaults to current user)
+
+	Returns:
+		dict: Access status information
+	"""
+	if not batch:
+		frappe.throw(_("Batch is required"))
+
+	if not member:
+		member = frappe.session.user
+
+	# Import the check function
+	from lms.lms.doctype.lms_batch_enrollment.lms_batch_enrollment import check_batch_access
+
+	has_access = check_batch_access(member, batch)
+
+	# Get enrollment details if exists
+	enrollment = frappe.db.get_value(
+		"LMS Batch Enrollment",
+		{"member": member, "batch": batch},
+		["name", "status", "is_time_limited", "access_end_date", "access_start_date"],
+		as_dict=True
+	)
+
+	days_remaining = None
+	if enrollment and enrollment.is_time_limited and enrollment.access_end_date:
+		end_date = getdate(enrollment.access_end_date)
+		today = getdate(nowdate())
+		days_remaining = (end_date - today).days
+
+	return {
+		"has_access": has_access,
+		"member": member,
+		"batch": batch,
+		"enrollment": enrollment.name if enrollment else None,
+		"status": enrollment.status if enrollment else None,
+		"is_time_limited": enrollment.is_time_limited if enrollment else None,
+		"access_end_date": str(enrollment.access_end_date) if enrollment and enrollment.access_end_date else None,
+		"days_remaining": days_remaining
+	}
+
+
+@frappe.whitelist()
+def get_batch_enrollments(batch, status=None, is_time_limited=None, limit=100, offset=0):
+	"""
+	Get all enrollments for a batch with optional filters.
+
+	Args:
+		batch (str): The batch ID
+		status (str, optional): Filter by status (Active, Expired, Extended, Manually Removed)
+		is_time_limited (int, optional): Filter by time-limited flag (0 or 1)
+		limit (int, optional): Max results (default 100)
+		offset (int, optional): Pagination offset
+
+	Returns:
+		dict: List of enrollments with pagination info
+	"""
+	# Check permissions
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "Batch Evaluator", "System Manager"]):
+		frappe.throw(_("You do not have permission to view batch enrollments."))
+
+	if not batch:
+		frappe.throw(_("Batch is required"))
+
+	if not frappe.db.exists("LMS Batch", batch):
+		frappe.throw(_("The specified batch does not exist."))
+
+	filters = {"batch": batch}
+
+	if status:
+		filters["status"] = status
+
+	if is_time_limited is not None:
+		filters["is_time_limited"] = cint(is_time_limited)
+
+	# Get total count
+	total = frappe.db.count("LMS Batch Enrollment", filters)
+
+	# Get enrollments
+	enrollments = frappe.get_all(
+		"LMS Batch Enrollment",
+		filters=filters,
+		fields=[
+			"name", "member", "member_name", "status",
+			"is_time_limited", "enrollment_date",
+			"access_start_date", "access_end_date",
+			"access_duration_days", "extended_count"
+		],
+		order_by="enrollment_date desc",
+		limit_page_length=cint(limit),
+		limit_start=cint(offset)
+	)
+
+	# Add computed fields
+	today = getdate(nowdate())
+	for enrollment in enrollments:
+		if enrollment.is_time_limited and enrollment.access_end_date:
+			end_date = getdate(enrollment.access_end_date)
+			enrollment["days_remaining"] = (end_date - today).days
+			enrollment["is_expired"] = enrollment["days_remaining"] < 0
+		enrollment["access_end_date"] = str(enrollment.access_end_date) if enrollment.access_end_date else None
+		enrollment["access_start_date"] = str(enrollment.access_start_date) if enrollment.access_start_date else None
+		enrollment["enrollment_date"] = str(enrollment.enrollment_date) if enrollment.enrollment_date else None
+
+	return {
+		"success": True,
+		"batch": batch,
+		"total": total,
+		"limit": limit,
+		"offset": offset,
+		"enrollments": enrollments
+	}

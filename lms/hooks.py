@@ -140,6 +140,9 @@ scheduler_events = {
 		"lms.lms.doctype.lms_payment.lms_payment.send_payment_reminder",
 		"lms.lms.doctype.lms_batch.lms_batch.send_batch_start_reminder",
 		"lms.lms.doctype.lms_live_class.lms_live_class.send_live_class_reminder",
+		# Time-limited batch enrollment tasks
+		"lms.lms.doctype.lms_batch_enrollment.enrollment_scheduler.expire_batch_enrollments",
+		"lms.lms.doctype.lms_batch_enrollment.enrollment_scheduler.send_expiry_reminders",
 	],
 }
 

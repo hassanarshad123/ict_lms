@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "autoname": "autoincrement",
+ "creation": "2025-01-21 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "extended_on",
+  "extended_by",
+  "column_break_1",
+  "previous_end_date",
+  "new_end_date",
+  "extension_days",
+  "section_break_reason",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "extended_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Extended On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "extended_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Extended By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "previous_end_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Previous End Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "new_end_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "New End Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "extension_days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Extension Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_reason",
+   "fieldtype": "Section Break",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-21 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LMS",
+ "name": "LMS Enrollment Extension",
+ "naming_rule": "Autoincrement",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

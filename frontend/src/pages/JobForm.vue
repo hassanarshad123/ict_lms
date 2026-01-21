@@ -251,6 +251,17 @@ onMounted(() => {
 		router.push({
 			name: 'Jobs',
 		})
+		return
+	}
+
+	// Only admins, moderators, course creators, and evaluators can create jobs
+	// LMS Students and LMS Instructors should not access the job form for creating new jobs
+	const canCreateJob = user.data?.is_admin || user.data?.is_moderator || user.data?.is_course_creator || user.data?.is_evaluator
+	if (props.jobName === 'new' && !canCreateJob) {
+		router.push({
+			name: 'Jobs',
+		})
+		return
 	}
 
 	if (props.jobName != 'new') jobDetail.reload()

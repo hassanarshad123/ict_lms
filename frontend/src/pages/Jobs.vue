@@ -8,7 +8,7 @@
 				:items="[{ label: __('Jobs'), route: { name: 'Jobs' } }]"
 			/>
 			<router-link
-				v-if="user.data?.name"
+				v-if="canCreateJob"
 				:to="{
 					name: 'JobForm',
 					params: {
@@ -150,6 +150,12 @@ onMounted(() => {
 
 const isModerator = computed(() => {
 	return user.data?.is_moderator
+})
+
+const canCreateJob = computed(() => {
+	// Only admins, moderators, course creators, and evaluators can create jobs
+	// LMS Students and LMS Instructors should not see the create button
+	return user.data?.is_admin || user.data?.is_moderator || user.data?.is_course_creator || user.data?.is_evaluator
 })
 
 const getClosedJobCount = () => {
