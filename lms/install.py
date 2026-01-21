@@ -13,6 +13,7 @@ def after_sync():
 	create_lms_roles()
 	set_default_certificate_print_format()
 	give_lms_roles_to_admin()
+	give_user_permission_to_lms_roles()
 
 
 def before_uninstall():
@@ -204,3 +205,20 @@ def give_lms_roles_to_admin():
 			doc.parentfield = "roles"
 			doc.role = role
 			doc.save()
+
+
+def give_user_permission_to_lms_roles():
+	"""
+	Allow Course Creator and Moderator roles to read User doctype.
+	This is needed for the student dropdown in batch management to show all users.
+	"""
+	roles = ["Course Creator", "Moderator", "Batch Evaluator"]
+	for role in roles:
+		if not frappe.db.exists("Custom DocPerm", {"parent": "User", "role": role}):
+			frappe.get_doc({
+				"doctype": "Custom DocPerm",
+				"parent": "User",
+				"role": role,
+				"read": 1,
+				"select": 1,
+			}).save(ignore_permissions=True)

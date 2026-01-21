@@ -59,11 +59,6 @@
 						:label="__('Published')"
 					/>
 					<FormControl
-						v-model="batch.allow_self_enrollment"
-						type="checkbox"
-						:label="__('Allow self enrollment')"
-					/>
-					<FormControl
 						v-model="batch.certification"
 						type="checkbox"
 						:label="__('Certification')"
@@ -84,6 +79,8 @@
 							class="mb-4"
 							:required="true"
 						/>
+					</div>
+					<div class="space-y-5">
 						<FormControl
 							v-model="batch.end_date"
 							:label="__('Batch End Date')"
@@ -93,30 +90,6 @@
 						/>
 					</div>
 					<div class="space-y-5">
-						<FormControl
-							v-model="batch.start_time"
-							:label="__('Session Start Time')"
-							type="time"
-							class="mb-4"
-							:required="true"
-						/>
-						<FormControl
-							v-model="batch.end_time"
-							:label="__('Session End Time')"
-							type="time"
-							class="mb-4"
-							:required="true"
-						/>
-					</div>
-					<div class="space-y-5">
-						<FormControl
-							v-model="batch.timezone"
-							:label="__('Timezone')"
-							type="text"
-							:placeholder="__('Example: IST (+5:30)')"
-							class="mb-4"
-							:required="true"
-						/>
 						<FormControl
 							v-model="batch.evaluation_end_date"
 							:label="__('Evaluation End Date')"
@@ -260,33 +233,6 @@
 				</div>
 			</div>
 
-			<div class="px-5 md:px-20 pb-5 space-y-5">
-				<div class="text-lg text-ink-gray-9 font-semibold">
-					{{ __('Pricing') }}
-				</div>
-				<FormControl
-					v-model="batch.paid_batch"
-					type="checkbox"
-					:label="__('Paid Batch')"
-				/>
-				<div
-					v-if="batch.paid_batch"
-					class="grid grid-cols-1 md:grid-cols-3 gap-5"
-				>
-					<FormControl
-						v-model="batch.amount"
-						:label="__('Amount')"
-						type="number"
-					/>
-					<Link
-						doctype="Currency"
-						v-model="batch.currency"
-						:filters="{ enabled: 1 }"
-						:label="__('Currency')"
-					/>
-				</div>
-			</div>
-
 			<div class="px-5 md:px-20 pb-5 space-y-5 border-b">
 				<div class="text-lg text-ink-gray-9 font-semibold">
 					{{ __('Meta Tags') }}
@@ -365,14 +311,14 @@ const props = defineProps({
 
 const batch = reactive({
 	title: '',
-	published: false,
+	published: true,
 	description: '',
 	batch_details: '',
 	start_date: '',
 	end_date: '',
-	start_time: '',
-	end_time: '',
-	timezone: '',
+	start_time: '09:00',
+	end_time: '17:00',
+	timezone: 'Asia/Karachi',
 	evaluation_end_date: '',
 	confirmation_email_template: '',
 	seat_count: '',

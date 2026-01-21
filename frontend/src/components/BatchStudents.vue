@@ -96,6 +96,7 @@
 	</div>
 
 	<StudentModal
+		v-if="props.batch?.data?.name"
 		:batch="props.batch.data.name"
 		v-model="showStudentModal"
 		v-model:reloadStudents="students"
@@ -122,7 +123,7 @@ import {
 	toast,
 } from 'frappe-ui'
 import { Plus, Trash2 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import StudentModal from '@/components/Modals/StudentModal.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 import BatchStudentProgress from '@/components/Modals/BatchStudentProgress.vue'
@@ -141,11 +142,24 @@ const props = defineProps({
 
 const students = createResource({
 	url: 'lms.lms.utils.get_batch_students',
-	params: {
-		batch: props.batch?.data?.name,
+	makeParams() {
+		return {
+			batch: props.batch?.data?.name,
+		}
 	},
-	auto: true,
+	auto: false,
 })
+
+// Watch for batch data to be available and fetch students
+watch(
+	() => props.batch?.data?.name,
+	(batchName) => {
+		if (batchName) {
+			students.reload()
+		}
+	},
+	{ immediate: true }
+)
 
 const getStudentColumns = () => {
 	let columns = [

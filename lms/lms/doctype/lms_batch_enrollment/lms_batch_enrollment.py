@@ -104,6 +104,43 @@ class LMSBatchEnrollment(Document):
 					}
 				).save()
 
+	def on_trash(self):
+		"""Remove course enrollments and live class participation when batch enrollment is deleted."""
+		self.remove_course_enrollments()
+		self.remove_member_from_live_class()
+
+	def remove_course_enrollments(self):
+		"""Delete LMS Enrollment records that were created from this batch enrollment."""
+		enrollments = frappe.get_all(
+			"LMS Enrollment",
+			filters={
+				"enrollment_from_batch": self.batch,
+				"member": self.member
+			},
+			pluck="name"
+		)
+
+		for enrollment in enrollments:
+			frappe.delete_doc("LMS Enrollment", enrollment, ignore_permissions=True)
+
+	def remove_member_from_live_class(self):
+		"""Remove member from live class events when batch enrollment is deleted."""
+		live_classes = frappe.get_all("LMS Live Class", {"batch_name": self.batch}, ["name", "event"])
+
+		for live_class in live_classes:
+			if live_class.event:
+				participants = frappe.get_all(
+					"Event Participants",
+					filters={
+						"parent": live_class.event,
+						"reference_doctype": "User",
+						"reference_docname": self.member
+					},
+					pluck="name"
+				)
+				for participant in participants:
+					frappe.delete_doc("Event Participants", participant, ignore_permissions=True)
+
 
 @frappe.whitelist()
 def send_confirmation_email(doc):

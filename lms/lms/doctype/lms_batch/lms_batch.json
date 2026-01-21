@@ -125,6 +125,7 @@
    "label": "Seat Count"
   },
   {
+   "default": "09:00:00",
    "fieldname": "start_time",
    "fieldtype": "Time",
    "in_list_view": 1,
@@ -132,6 +133,7 @@
    "reqd": 1
   },
   {
+   "default": "17:00:00",
    "fieldname": "end_time",
    "fieldtype": "Time",
    "label": "End Time",
@@ -210,7 +212,7 @@
    "reqd": 1
   },
   {
-   "default": "0",
+   "default": "1",
    "fieldname": "published",
    "fieldtype": "Check",
    "in_standard_filter": 1,
@@ -311,6 +313,7 @@
    "label": "Allow Self Enrollment"
   },
   {
+   "default": "Asia/Karachi",
    "fieldname": "timezone",
    "fieldtype": "Data",
    "label": "Timezone",
