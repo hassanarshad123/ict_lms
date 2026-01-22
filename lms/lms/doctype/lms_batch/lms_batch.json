@@ -85,8 +85,9 @@
   {
    "fieldname": "description",
    "fieldtype": "Small Text",
+   "hidden": 1,
    "label": "Description",
-   "reqd": 1
+   "reqd": 0
   },
   {
    "fieldname": "section_break_6",

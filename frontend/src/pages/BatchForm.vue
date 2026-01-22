@@ -37,14 +37,6 @@
 							:filters="{ ignore_user_type: 1 }"
 						/>
 					</div>
-					<FormControl
-						v-model="batch.description"
-						:label="__('Short Description')"
-						type="textarea"
-						:rows="8"
-						:placeholder="__('Short description of the batch')"
-						:required="true"
-					/>
 				</div>
 			</div>
 
@@ -312,7 +304,6 @@ const props = defineProps({
 const batch = reactive({
 	title: '',
 	published: true,
-	description: '',
 	batch_details: '',
 	start_date: '',
 	end_date: '',
@@ -449,12 +440,11 @@ const imageResource = createResource({
 })
 
 const validateFields = () => {
-	batch.description = sanitizeHTML(batch.description)
 	batch.batch_details = sanitizeHTML(batch.batch_details)
 
 	Object.keys(batch).forEach((key) => {
 		if (
-			!['description', 'batch_details'].includes(key) &&
+			!['batch_details'].includes(key) &&
 			typeof batch[key] === 'string'
 		) {
 			batch[key] = escapeHTML(batch[key])

@@ -24,9 +24,6 @@
 		>
 			{{ __('Sold Out') }}
 		</div>
-		<div class="short-introduction text-sm text-ink-gray-7">
-			{{ batch.description }}
-		</div>
 		<div v-if="batch.amount" class="font-semibold text-ink-gray-9 mb-4">
 			{{ batch.price }}
 		</div>
@@ -84,17 +81,6 @@ const props = defineProps({
 })
 </script>
 <style>
-.short-introduction {
-	display: -webkit-box;
-	-webkit-line-clamp: 2;
-	-webkit-box-orient: vertical;
-	text-overflow: ellipsis;
-	width: 100%;
-	overflow: hidden;
-	margin: 0.25rem 0 1rem;
-	line-height: 1.5;
-}
-
 .avatar-group {
 	display: inline-flex;
 	align-items: center;

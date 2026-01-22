@@ -65,9 +65,6 @@ describe("Batch Creation", () => {
 		cy.get("label").contains("Seat Count").type("10");
 		cy.get("label").contains("Published").click();
 
-		cy.get("label")
-			.contains("Short Description")
-			.type("Test Batch Short Description to test the UI");
 		cy.get("div[contenteditable=true").invoke(
 			"text",
 			"Test Batch Description. I need a very big description to test the UI. This is a very big description. It contains more than once sentence. Its meant to be this long as this is a UI test. Its unbearably long and I'm not sure why I'm typing this much. I'm just going to keep typing until I feel like its long enough. I think its long enough now. I'm going to stop typing now."
@@ -117,9 +114,6 @@ describe("Batch Creation", () => {
 		cy.get("@batchName").then((batchName) => {
 			cy.get(`a[href='/lms/batches/details/${batchName}'`).within(() => {
 				cy.get("div").contains("Test Batch").should("be.visible");
-				cy.get("div")
-					.contains("Test Batch Short Description to test the UI")
-					.should("be.visible");
 				cy.get("span")
 					.contains("01 Oct 2030 - 31 Oct 2030")
 					.should("be.visible");
@@ -139,9 +133,6 @@ describe("Batch Creation", () => {
 		});
 
 		cy.get("div").contains("Test Batch").should("be.visible");
-		cy.get("div")
-			.contains("Test Batch Short Description to test the UI")
-			.should("be.visible");
 		cy.get("a").contains("Evaluator").should("be.visible");
 		cy.get("span:visible")
 			.contains("01 Oct 2030 - 31 Oct 2030")

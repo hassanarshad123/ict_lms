@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(git -C \"C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP\\\\ict_lms\" log --oneline -20)",
+      "Bash(yarn build)",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP\\\\ict_lms\\\\frontend && yarn build\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP\\\\ict_lms\\\\frontend && yarn --version && yarn build\")",
+      "Bash(powershell.exe -Command \"Set-Location ''C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP\\\\ict_lms\\\\frontend''; yarn build\")",
+      "Bash(powershell.exe -Command \"Set-Location ''C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP\\\\ict_lms\\\\frontend''; npm run build\")"
+    ]
+  }
+}
