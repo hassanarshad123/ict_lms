@@ -1660,6 +1660,33 @@ def track_video_watch_duration(lesson, videos):
 	"""
 	Track the watch duration of videos in a lesson.
 	"""
+	# Check if user has access to this lesson's course
+	course = frappe.db.get_value("Course Lesson", lesson, "course")
+	if not course:
+		return
+
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment",
+		{"course": course, "member": frappe.session.user},
+		["name", "enrollment_from_batch"],
+		as_dict=True
+	)
+	if not enrollment:
+		return
+
+	# If enrollment is from a batch, verify batch enrollment is still active
+	if enrollment.enrollment_from_batch:
+		batch_enrollment_active = frappe.db.exists(
+			"LMS Batch Enrollment",
+			{
+				"member": frappe.session.user,
+				"batch": enrollment.enrollment_from_batch,
+				"status": ["in", ["Active", "Extended"]]
+			}
+		)
+		if not batch_enrollment_active:
+			return
+
 	if not isinstance(videos, list):
 		videos = json.loads(videos)
 
@@ -3199,9 +3226,29 @@ def has_recording_access(course):
 			):
 				return True
 
-	# Enrolled student has access
-	if frappe.db.exists("LMS Enrollment", {"course": course, "member": user}):
-		return True
+	# Enrolled student has access (with batch enrollment status check)
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment",
+		{"course": course, "member": user},
+		["name", "enrollment_from_batch"],
+		as_dict=True
+	)
+	if enrollment:
+		# If enrollment is from a batch, verify batch enrollment is still active
+		if enrollment.enrollment_from_batch:
+			batch_enrollment_active = frappe.db.exists(
+				"LMS Batch Enrollment",
+				{
+					"member": user,
+					"batch": enrollment.enrollment_from_batch,
+					"status": ["in", ["Active", "Extended"]]
+				}
+			)
+			if batch_enrollment_active:
+				return True
+		else:
+			# Direct course enrollment (not from batch)
+			return True
 
 	return False
 

@@ -50,9 +50,30 @@ def save_progress(lesson, course, scorm_details=None):
 	"""
 	Note: Pass the argument scorm_details as a dict if it is SCORM related save_progress
 	"""
-	membership = frappe.db.exists("LMS Enrollment", {"course": course, "member": frappe.session.user})
-	if not membership:
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment",
+		{"course": course, "member": frappe.session.user},
+		["name", "enrollment_from_batch"],
+		as_dict=True
+	)
+	if not enrollment:
 		return 0
+
+	# If enrollment is from a batch, verify batch enrollment is still active
+	if enrollment.enrollment_from_batch:
+		batch_enrollment_active = frappe.db.exists(
+			"LMS Batch Enrollment",
+			{
+				"member": frappe.session.user,
+				"batch": enrollment.enrollment_from_batch,
+				"status": ["in", ["Active", "Extended"]]
+			}
+		)
+		if not batch_enrollment_active:
+			# Batch enrollment expired or removed, deny access
+			return 0
+
+	membership = enrollment.name
 
 	frappe.db.set_value("LMS Enrollment", membership, "current_lesson", lesson)
 	progress_already_exists = frappe.db.exists(

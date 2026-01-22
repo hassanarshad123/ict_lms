@@ -84,9 +84,25 @@ def get_membership(course, member=None):
 				"course",
 				"purchased_certificate",
 				"certificate",
+				"enrollment_from_batch",
 			],
 			as_dict=True,
 		)
+
+		# If enrollment is from a batch, verify batch enrollment is still active
+		if membership.enrollment_from_batch:
+			batch_enrollment_active = frappe.db.exists(
+				"LMS Batch Enrollment",
+				{
+					"member": member,
+					"batch": membership.enrollment_from_batch,
+					"status": ["in", ["Active", "Extended"]]
+				}
+			)
+			if not batch_enrollment_active:
+				# Batch enrollment expired or removed, deny access
+				return False
+
 		return membership
 
 	return False
@@ -854,12 +870,26 @@ def get_enrollment_details(courses):
 		}
 
 		if frappe.db.exists("LMS Enrollment", filters):
-			course.membership = frappe.db.get_value(
+			membership = frappe.db.get_value(
 				"LMS Enrollment",
 				filters,
-				["name", "course", "current_lesson", "progress", "member"],
+				["name", "course", "current_lesson", "progress", "member", "enrollment_from_batch"],
 				as_dict=1,
 			)
+			# If enrollment is from a batch, verify batch enrollment is still active
+			if membership and membership.enrollment_from_batch:
+				batch_enrollment_active = frappe.db.exists(
+					"LMS Batch Enrollment",
+					{
+						"member": frappe.session.user,
+						"batch": membership.enrollment_from_batch,
+						"status": ["in", ["Active", "Extended"]]
+					}
+				)
+				if not batch_enrollment_active:
+					# Batch enrollment expired or removed, don't show membership
+					membership = None
+			course.membership = membership
 
 	return courses
 
@@ -931,9 +961,23 @@ def get_course_details(course):
 		course_details.membership = frappe.db.get_value(
 			"LMS Enrollment",
 			{"member": frappe.session.user, "course": course_details.name},
-			["name", "course", "current_lesson", "progress", "member"],
+			["name", "course", "current_lesson", "progress", "member", "enrollment_from_batch"],
 			as_dict=1,
 		)
+
+		# If enrollment is from a batch, verify batch enrollment is still active
+		if course_details.membership and course_details.membership.enrollment_from_batch:
+			batch_enrollment_active = frappe.db.exists(
+				"LMS Batch Enrollment",
+				{
+					"member": frappe.session.user,
+					"batch": course_details.membership.enrollment_from_batch,
+					"status": ["in", ["Active", "Extended"]]
+				}
+			)
+			if not batch_enrollment_active:
+				# Batch enrollment expired or removed, deny membership
+				course_details.membership = None
 
 	if course_details.membership and course_details.membership.current_lesson:
 		course_details.current_lesson = get_lesson_index(course_details.membership.current_lesson)
@@ -2153,9 +2197,28 @@ def validate_course_access(lesson):
 		return
 
 	course = frappe.db.get_value("Course Lesson", lesson, "course")
-	enrollment_exists = frappe.db.exists("LMS Enrollment", {"member": frappe.session.user, "course": course})
-	if not enrollment_exists:
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment",
+		{"member": frappe.session.user, "course": course},
+		["name", "enrollment_from_batch"],
+		as_dict=True
+	)
+
+	if not enrollment:
 		frappe.throw(_("You do not have access to this course."))
+
+	# If enrollment is from a batch, verify batch enrollment is still active
+	if enrollment.enrollment_from_batch:
+		batch_enrollment_active = frappe.db.exists(
+			"LMS Batch Enrollment",
+			{
+				"member": frappe.session.user,
+				"batch": enrollment.enrollment_from_batch,
+				"status": ["in", ["Active", "Extended"]]
+			}
+		)
+		if not batch_enrollment_active:
+			frappe.throw(_("Your batch enrollment has expired. You no longer have access to this course."))
 
 
 def validate_batch_access(batch):
