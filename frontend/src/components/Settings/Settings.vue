@@ -142,8 +142,7 @@ const tabsStructure = computed(() => {
 							name: 'livecode_url',
 							doctype: 'Livecode URL',
 							type: 'text',
-							description:
-								'https://docs.frappe.io/learning/falcon-self-hosting-guide',
+							description: 'https://zensbot.com',
 						},
 						{
 							label: 'Batch Confirmation Email Template',
