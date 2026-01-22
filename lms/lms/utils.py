@@ -1117,7 +1117,12 @@ def get_neighbour_lesson(course, chapter, lesson):
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=500, seconds=60 * 60)
 def get_batch_details(batch):
-	batch_students = frappe.get_all("LMS Batch Enrollment", {"batch": batch}, pluck="member")
+	# Only get active enrollments (not expired or manually removed)
+	batch_students = frappe.get_all(
+		"LMS Batch Enrollment",
+		{"batch": batch, "status": ["in", ["Active", "Extended"]]},
+		pluck="member"
+	)
 	if (
 		not frappe.db.get_value("LMS Batch", batch, "published")
 		and not can_create_batches()
@@ -1195,7 +1200,12 @@ def categorize_batches(batches):
 			upcoming.append(batch)
 
 		if frappe.session.user != "Guest":
-			if frappe.db.exists("LMS Batch Enrollment", {"member": frappe.session.user, "batch": batch.name}):
+			# Only show as enrolled if user has active enrollment
+			if frappe.db.exists("LMS Batch Enrollment", {
+				"member": frappe.session.user,
+				"batch": batch.name,
+				"status": ["in", ["Active", "Extended"]]
+			}):
 				enrolled.append(batch)
 
 	categories = [archived, private, enrolled]
@@ -1362,8 +1372,11 @@ def get_exercise_details(assessment, member):
 @frappe.whitelist()
 def get_batch_students(batch):
 	students = []
+	# Only get active enrollments (not expired or manually removed)
 	students_list = frappe.get_all(
-		"LMS Batch Enrollment", filters={"batch": batch}, fields=["member", "name"]
+		"LMS Batch Enrollment",
+		filters={"batch": batch, "status": ["in", ["Active", "Extended"]]},
+		fields=["member", "name"]
 	)
 
 	for student in students_list:
@@ -1988,8 +2001,11 @@ def get_batches(filters=None, start=0, order_by="start_date"):
 		filters = {}
 
 	if filters.get("enrolled"):
+		# Only get batches where user has active enrollment
 		enrolled_batches = frappe.get_all(
-			"LMS Batch Enrollment", {"member": frappe.session.user}, pluck="batch"
+			"LMS Batch Enrollment",
+			{"member": frappe.session.user, "status": ["in", ["Active", "Extended"]]},
+			pluck="batch"
 		)
 		filters.update({"name": ["in", enrolled_batches]})
 		del filters["enrolled"]
@@ -2059,7 +2075,11 @@ def get_batch_type(filters):
 def get_batch_card_details(batches):
 	for batch in batches:
 		batch.instructors = get_instructors("LMS Batch", batch.name)
-		students_count = frappe.db.count("LMS Batch Enrollment", {"batch": batch.name})
+		# Count only active enrollments for seat availability
+		students_count = frappe.db.count(
+			"LMS Batch Enrollment",
+			{"batch": batch.name, "status": ["in", ["Active", "Extended"]]}
+		)
 
 		if batch.seat_count:
 			batch.seats_left = batch.seat_count - students_count
@@ -2148,8 +2168,10 @@ def validate_batch_access(batch):
 	if has_evaluator_role():
 		return
 
+	# Check for active enrollment only (not expired or manually removed)
 	enrollment_exists = frappe.db.exists(
-		"LMS Batch Enrollment", {"member": frappe.session.user, "batch": batch}
+		"LMS Batch Enrollment",
+		{"member": frappe.session.user, "batch": batch, "status": ["in", ["Active", "Extended"]]}
 	)
 	if not enrollment_exists:
 		frappe.throw(_("You do not have access to this batch."))

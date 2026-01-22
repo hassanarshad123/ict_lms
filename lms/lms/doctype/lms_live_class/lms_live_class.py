@@ -38,7 +38,12 @@ class LMSLiveClass(Document):
 		return event
 
 	def add_event_participants(self, event, calendar):
-		participants = frappe.get_all("LMS Batch Enrollment", {"batch": self.batch_name}, pluck="member")
+		# Only include active enrollments (not expired or manually removed)
+		participants = frappe.get_all(
+			"LMS Batch Enrollment",
+			{"batch": self.batch_name, "status": ["in", ["Active", "Extended"]]},
+			pluck="member"
+		)
 		instructors = frappe.get_all(
 			"Course Instructor", {"parenttype": "LMS Batch", "parent": self.batch_name}, pluck="instructor"
 		)
@@ -82,9 +87,10 @@ def send_live_class_reminder():
 	)
 
 	for live_class in classes:
+		# Only send reminders to active enrollments
 		students = frappe.get_all(
 			"LMS Batch Enrollment",
-			{"batch": live_class.batch_name},
+			{"batch": live_class.batch_name, "status": ["in", ["Active", "Extended"]]},
 			["member", "member_name"],
 		)
 		for student in students:

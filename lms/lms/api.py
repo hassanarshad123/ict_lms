@@ -202,13 +202,22 @@ def verify_billing_access(doctype, name, billing_type):
 			message = _("You are already enrolled for this course.")
 
 	elif access and billing_type == "batch":
-		membership = frappe.db.exists("LMS Batch Enrollment", {"member": frappe.session.user, "batch": name})
+		# Check for active enrollment only (not expired or manually removed)
+		membership = frappe.db.exists("LMS Batch Enrollment", {
+			"member": frappe.session.user,
+			"batch": name,
+			"status": ["in", ["Active", "Extended"]]
+		})
 		if membership:
 			access = False
 			message = _("You are already enrolled for this batch.")
 
 		seat_count = frappe.get_cached_value("LMS Batch", name, "seat_count")
-		number_of_students = frappe.db.count("LMS Batch Enrollment", {"batch": name})
+		# Count only active enrollments for seat availability
+		number_of_students = frappe.db.count("LMS Batch Enrollment", {
+			"batch": name,
+			"status": ["in", ["Active", "Extended"]]
+		})
 		if seat_count <= number_of_students:
 			access = False
 			message = _("Batch is sold out.")

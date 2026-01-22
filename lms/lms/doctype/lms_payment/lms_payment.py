@@ -57,7 +57,11 @@ def has_paid_later(payment):
 def is_batch_sold_out(payment):
 	if payment.payment_for_document_type == "LMS Batch":
 		seat_count = frappe.get_cached_value("LMS Batch", payment.payment_for_document, "seat_count")
-		number_of_students = frappe.db.count("LMS Batch Enrollment", {"batch": payment.payment_for_document})
+		# Count only active enrollments for seat availability
+		number_of_students = frappe.db.count(
+			"LMS Batch Enrollment",
+			{"batch": payment.payment_for_document, "status": ["in", ["Active", "Extended"]]}
+		)
 
 		if seat_count <= number_of_students:
 			return True

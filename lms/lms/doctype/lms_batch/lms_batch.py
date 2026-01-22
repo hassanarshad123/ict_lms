@@ -123,7 +123,11 @@ class LMSBatch(Document):
 		if cint(self.seat_count) < 0:
 			frappe.throw(_("Seat count cannot be negative."))
 
-		students = frappe.db.count("LMS Batch Enrollment", {"batch": self.name})
+		# Count only active enrollments for seat validation
+		students = frappe.db.count(
+			"LMS Batch Enrollment",
+			{"batch": self.name, "status": ["in", ["Active", "Extended"]]}
+		)
 		if cint(self.seat_count) and cint(self.seat_count) < students:
 			frappe.throw(_("There are no seats available in this batch."))
 
@@ -326,7 +330,12 @@ def send_batch_start_reminder():
 	)
 
 	for batch in batches:
-		students = frappe.get_all("LMS Batch Enrollment", {"batch": batch.name}, ["member", "member_name"])
+		# Only send reminders to active enrollments
+		students = frappe.get_all(
+			"LMS Batch Enrollment",
+			{"batch": batch.name, "status": ["in", ["Active", "Extended"]]},
+			["member", "member_name"]
+		)
 		for student in students:
 			send_mail(batch, student)
 
