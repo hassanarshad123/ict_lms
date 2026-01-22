@@ -30,11 +30,9 @@
 						/>
 						<MultiSelect
 							v-model="instructors"
-							doctype="Course Evaluator"
+							url="lms.lms.api.get_instructors"
 							:label="__('Instructors')"
 							:required="true"
-							:onCreate="(close) => openSettings('Evaluators', close)"
-							:filters="{ ignore_user_type: 1 }"
 						/>
 					</div>
 				</div>

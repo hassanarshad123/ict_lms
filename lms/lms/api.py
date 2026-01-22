@@ -1491,6 +1491,42 @@ def delete_evaluator(evaluator):
 
 
 @frappe.whitelist()
+def get_instructors(txt=""):
+	"""
+	Get users who can be instructors for a batch.
+	Returns users with Teacher, Batch Evaluator, or Course Creator roles.
+	Format matches frappe.desk.search.search_link for compatibility with MultiSelect.
+	"""
+	txt = txt or ""
+
+	# Get users with teacher-related roles
+	users_with_roles = frappe.db.sql(
+		"""
+		SELECT DISTINCT u.name, u.full_name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` hr ON hr.parent = u.name
+		WHERE hr.role IN ('Teacher', 'Batch Evaluator', 'Course Creator')
+		AND u.enabled = 1
+		AND (u.name LIKE %s OR u.full_name LIKE %s)
+		ORDER BY u.full_name
+		LIMIT 20
+		""",
+		(f"%{txt}%", f"%{txt}%"),
+		as_dict=True,
+	)
+
+	# Format to match search_link response
+	results = []
+	for user in users_with_roles:
+		results.append({
+			"value": user.name,
+			"description": user.full_name or user.name,
+		})
+
+	return results
+
+
+@frappe.whitelist()
 def capture_user_persona(responses):
 	frappe.only_for("System Manager")
 	data = frappe.parse_json(responses)

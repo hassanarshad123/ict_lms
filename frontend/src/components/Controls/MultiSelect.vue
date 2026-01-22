@@ -128,7 +128,11 @@ const props = defineProps({
 	},
 	doctype: {
 		type: String,
-		required: true,
+		required: false,
+	},
+	url: {
+		type: String,
+		required: false,
 	},
 	filters: {
 		type: Object,
@@ -176,14 +180,13 @@ watchDebounced(
 )
 
 const filterOptions = createResource({
-	url: 'frappe.desk.search.search_link',
+	url: props.url || 'frappe.desk.search.search_link',
 	method: 'POST',
-	cache: [text.value, props.doctype],
+	cache: [text.value, props.url || props.doctype],
 	auto: true,
-	params: {
-		txt: text.value,
-		doctype: props.doctype,
-	},
+	params: props.url
+		? { txt: text.value }
+		: { txt: text.value, doctype: props.doctype },
 })
 
 const options = computed(() => {
@@ -194,10 +197,9 @@ const options = computed(() => {
 
 function reload(val) {
 	filterOptions.update({
-		params: {
-			txt: val,
-			doctype: props.doctype,
-		},
+		params: props.url
+			? { txt: val }
+			: { txt: val, doctype: props.doctype },
 	})
 	filterOptions.reload()
 }
