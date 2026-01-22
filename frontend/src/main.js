@@ -29,3 +29,39 @@ app.provide('$allUsers', allUsers)
 
 app.config.globalProperties.$user = userResource
 app.config.globalProperties.$dialog = createDialog
+
+// Replace "Built on Frappe" with "Built by Zensbot.com" branding
+const replaceBuiltOnFrappe = () => {
+	if (!document.body) return
+	const walker = document.createTreeWalker(
+		document.body,
+		NodeFilter.SHOW_TEXT,
+		null,
+		false
+	)
+	let node
+	while ((node = walker.nextNode())) {
+		if (node.nodeValue && node.nodeValue.includes('Built on Frappe')) {
+			node.nodeValue = node.nodeValue.replace('Built on Frappe', 'Built by Zensbot.com')
+		}
+	}
+	// Also check for links with href to frappe.io and update them
+	document.querySelectorAll('a[href*="frappe.io"]').forEach((link) => {
+		if (link.textContent.includes('Frappe')) {
+			link.href = 'https://zensbot.com'
+			link.textContent = link.textContent.replace('Frappe', 'Zensbot.com')
+		}
+	})
+}
+
+// Use MutationObserver to catch dynamically rendered content
+if (document.body) {
+	const observer = new MutationObserver(() => {
+		replaceBuiltOnFrappe()
+	})
+	observer.observe(document.body, {
+		childList: true,
+		subtree: true
+	})
+	replaceBuiltOnFrappe()
+}
