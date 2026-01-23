@@ -218,14 +218,14 @@ def api_sign_up(email, full_name, password, user_category="Student"):
 	api_key = frappe.generate_hash(length=15)
 	api_secret = frappe.generate_hash(length=15)
 
-	# Create user
+	# Create user (welcome email will be sent by Frappe)
 	user = frappe.get_doc({
 		"doctype": "User",
 		"email": email,
 		"first_name": escape_html(full_name),
 		"user_category": user_category,
 		"enabled": 1,
-		"new_password": password,
+		"send_welcome_email": 1,  # Send welcome email
 		"user_type": "Website User",
 		"api_key": api_key,
 		"api_secret": api_secret,
@@ -233,6 +233,11 @@ def api_sign_up(email, full_name, password, user_category="Student"):
 	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
 	user.insert()
+
+	# Set the password directly so user can login immediately
+	# (Welcome email is still sent, but user doesn't need to use reset link)
+	from frappe.utils.password import update_password
+	update_password(user.name, password)
 
 	# Add default roles
 	default_role = frappe.db.get_single_value("Portal Settings", "default_role")
