@@ -145,6 +145,127 @@ def api_login(usr, pwd):
 	}
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def api_sign_up(email, full_name, password, user_category="Student"):
+	"""
+	API signup endpoint - creates user with password and returns API tokens.
+	User can immediately use the API after signup without email verification.
+
+	Args:
+		email: User email address
+		full_name: User's full name
+		password: User password (min 8 characters recommended)
+		user_category: User category (default: "Student")
+
+	Returns:
+		dict: Contains api_key, api_secret, and user info on success
+
+	Usage:
+		POST /api/method/lms.lms.api.api_sign_up
+		Body: {
+			"email": "newuser@example.com",
+			"full_name": "John Doe",
+			"password": "securepassword123"
+		}
+
+		Response:
+		{
+			"message": "Signup successful",
+			"api_key": "xxx",
+			"api_secret": "yyy",
+			"user": {...}
+		}
+
+		Then use token for authenticated requests:
+		Authorization: token <api_key>:<api_secret>
+	"""
+	from frappe.utils import escape_html
+	from frappe.website.utils import is_signup_disabled
+
+	# Check if signup is disabled
+	if is_signup_disabled():
+		frappe.throw(_("Sign Up is disabled"), _("Not Allowed"))
+
+	# Validate required fields
+	if not email:
+		frappe.throw(_("Email is required"))
+	if not full_name:
+		frappe.throw(_("Full name is required"))
+	if not password:
+		frappe.throw(_("Password is required"))
+
+	# Validate email format
+	if not frappe.utils.validate_email_address(email):
+		frappe.throw(_("Please enter a valid email address"))
+
+	# Validate password length
+	if len(password) < 6:
+		frappe.throw(_("Password must be at least 6 characters long"))
+
+	# Check if user already exists
+	existing_user = frappe.db.get("User", {"email": email})
+	if existing_user:
+		if existing_user.enabled:
+			frappe.throw(_("User with this email already exists. Please login instead."))
+		else:
+			frappe.throw(_("This account exists but is disabled. Please contact support."))
+
+	# Rate limiting - prevent mass signups
+	if frappe.db.get_creation_count("User", 60) > 300:
+		frappe.throw(_("Too many signups recently. Please try again in an hour."))
+
+	# Generate API credentials
+	api_key = frappe.generate_hash(length=15)
+	api_secret = frappe.generate_hash(length=15)
+
+	# Create user
+	user = frappe.get_doc({
+		"doctype": "User",
+		"email": email,
+		"first_name": escape_html(full_name),
+		"user_category": user_category,
+		"enabled": 1,
+		"new_password": password,
+		"user_type": "Website User",
+		"api_key": api_key,
+		"api_secret": api_secret,
+	})
+	user.flags.ignore_permissions = True
+	user.flags.ignore_password_policy = True
+	user.insert()
+
+	# Add default roles
+	default_role = frappe.db.get_single_value("Portal Settings", "default_role")
+	if default_role:
+		user.add_roles(default_role)
+	user.add_roles("LMS Student")
+
+	# Set country from IP
+	from lms.lms.user import set_country_from_ip
+	set_country_from_ip(None, user.name)
+
+	frappe.db.commit()
+
+	# Get user roles
+	roles = frappe.get_roles(user.name)
+
+	return {
+		"message": "Signup successful",
+		"api_key": api_key,
+		"api_secret": api_secret,
+		"user": {
+			"name": user.name,
+			"email": user.email,
+			"full_name": user.full_name,
+			"username": user.username,
+			"user_image": user.user_image,
+			"is_admin": False,
+			"is_student": True,
+			"roles": roles,
+		},
+	}
+
+
 @frappe.whitelist(allow_guest=True)
 def get_translations():
 	if frappe.session.user != "Guest":
