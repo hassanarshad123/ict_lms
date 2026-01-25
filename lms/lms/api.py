@@ -619,16 +619,27 @@ def get_certification_categories():
 
 
 @frappe.whitelist()
-def get_assigned_badges(member):
+def get_assigned_badges(member=None):
+	"""Get badges assigned to a member."""
+	if not member:
+		member = frappe.session.user
+
 	assigned_badges = frappe.get_all(
 		"LMS Badge Assignment",
-		{"member": member},
-		["badge"],
-		as_dict=1,
+		filters={"member": member},
+		fields=["badge"],
 	)
 
 	for badge in assigned_badges:
-		badge.update(frappe.db.get_value("LMS Badge", badge.badge, ["name", "title", "image"]))
+		badge_info = frappe.db.get_value(
+			"LMS Badge",
+			badge.badge,
+			["name", "title", "image"],
+			as_dict=True
+		)
+		if badge_info:
+			badge.update(badge_info)
+
 	return assigned_badges
 
 
