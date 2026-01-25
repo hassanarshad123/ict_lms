@@ -1,0 +1,909 @@
+{
+	"info": {
+		"_postman_id": "lms-student-mobile-api",
+		"name": "LMS Student Mobile App API",
+		"description": "API collection for React Native student mobile app.\n\n## Authentication\nAll authenticated endpoints require the `Authorization` header:\n```\nAuthorization: token <api_key>:<api_secret>\n```\n\nGet your API credentials by calling the Login or Sign Up endpoint.\n\n## Base URL\nSet the `{{base_url}}` environment variable to your LMS instance URL (e.g., `https://your-lms.frappe.cloud`).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "api_secret",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"description": "Login, signup, and user info endpoints",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"usr\": \"student@example.com\",\n    \"pwd\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.api_login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.api_login"]
+						},
+						"description": "Login with email and password. Returns API credentials for authenticated requests.\n\n**Response:**\n```json\n{\n    \"message\": \"Login successful\",\n    \"api_key\": \"xxx\",\n    \"api_secret\": \"yyy\",\n    \"user\": {...}\n}\n```"
+					}
+				},
+				{
+					"name": "Sign Up",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"newstudent@example.com\",\n    \"full_name\": \"John Doe\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.api_sign_up",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.api_sign_up"]
+						},
+						"description": "Register a new student account. Returns API credentials immediately."
+					}
+				},
+				{
+					"name": "Get User Info",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_user_info",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_user_info"]
+						},
+						"description": "Get current authenticated user's profile and roles."
+					}
+				}
+			]
+		},
+		{
+			"name": "Courses",
+			"description": "Enrolled courses and course details",
+			"item": [
+				{
+					"name": "Get Enrolled Courses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_enrolled_courses?start=0&page_length=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_enrolled_courses"],
+							"query": [
+								{"key": "start", "value": "0"},
+								{"key": "page_length", "value": "20"}
+							]
+						},
+						"description": "Get all courses the student is enrolled in with progress."
+					}
+				},
+				{
+					"name": "Get Course Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_course_details_for_student?course=course-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_course_details_for_student"],
+							"query": [
+								{"key": "course", "value": "course-id"}
+							]
+						},
+						"description": "Get complete course details including enrollment info and certificate status."
+					}
+				},
+				{
+					"name": "Get Course Progress",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_course_progress?course=course-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_course_progress"],
+							"query": [
+								{"key": "course", "value": "course-id"}
+							]
+						},
+						"description": "Get detailed progress for a specific course."
+					}
+				},
+				{
+					"name": "Get Course Outline",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_course_outline_for_student?course=course-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_course_outline_for_student"],
+							"query": [
+								{"key": "course", "value": "course-id"}
+							]
+						},
+						"description": "Get course structure with chapters and lessons including completion status."
+					}
+				}
+			]
+		},
+		{
+			"name": "Lessons",
+			"description": "Lesson content and progress",
+			"item": [
+				{
+					"name": "Get Lesson Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_lesson_details_for_student?lesson=lesson-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_lesson_details_for_student"],
+							"query": [
+								{"key": "lesson", "value": "lesson-id"}
+							]
+						},
+						"description": "Get full lesson content with body, video, quiz info, and navigation."
+					}
+				},
+				{
+					"name": "Mark Lesson Complete",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"course\": \"course-id\",\n    \"chapter_number\": 1,\n    \"lesson_number\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.mark_lesson_progress",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.mark_lesson_progress"]
+						},
+						"description": "Mark a lesson as completed."
+					}
+				}
+			]
+		},
+		{
+			"name": "Quizzes",
+			"description": "Quiz taking and results",
+			"item": [
+				{
+					"name": "Get Quiz",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_lesson_quiz?quiz=quiz-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_lesson_quiz"],
+							"query": [
+								{"key": "quiz", "value": "quiz-id"}
+							]
+						},
+						"description": "Get quiz questions for taking (answers hidden)."
+					}
+				},
+				{
+					"name": "Submit Quiz",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quiz\": \"quiz-id\",\n    \"answers\": [\n        {\"question\": \"question-name-1\", \"answer\": [\"1\"]},\n        {\"question\": \"question-name-2\", \"answer\": [\"3\"]}\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.submit_quiz_answers",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.submit_quiz_answers"]
+						},
+						"description": "Submit quiz answers and get immediate result."
+					}
+				},
+				{
+					"name": "Get Quiz Result",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_quiz_result?submission=submission-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_quiz_result"],
+							"query": [
+								{"key": "submission", "value": "submission-id"}
+							]
+						},
+						"description": "Get detailed result of a quiz submission."
+					}
+				}
+			]
+		},
+		{
+			"name": "Assignments",
+			"description": "Assignment submission and status",
+			"item": [
+				{
+					"name": "Get Course Assignments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_course_assignments?course=course-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_course_assignments"],
+							"query": [
+								{"key": "course", "value": "course-id"}
+							]
+						},
+						"description": "Get all assignments for a course with submission status."
+					}
+				},
+				{
+					"name": "Submit Assignment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"assignment\": \"assignment-id\",\n    \"answer\": \"My text answer here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.submit_assignment",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.submit_assignment"]
+						},
+						"description": "Submit an assignment. Use 'answer' for text/URL types, 'attachment' for file types."
+					}
+				},
+				{
+					"name": "Get Assignment Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_assignment_status?submission=submission-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_assignment_status"],
+							"query": [
+								{"key": "submission", "value": "submission-id"}
+							]
+						},
+						"description": "Get submission status and evaluator feedback."
+					}
+				}
+			]
+		},
+		{
+			"name": "Jobs",
+			"description": "Job opportunities and applications",
+			"item": [
+				{
+					"name": "Get Job Opportunities",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_job_opportunities",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_job_opportunities"]
+						},
+						"description": "Get list of available job opportunities (public endpoint)."
+					}
+				},
+				{
+					"name": "Get Job Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_job_details?job=job-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_job_details"],
+							"query": [
+								{"key": "job", "value": "job-id"}
+							]
+						},
+						"description": "Get full details of a job opportunity (public endpoint)."
+					}
+				},
+				{
+					"name": "Apply for Job",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job\": \"job-id\",\n    \"resume\": \"/files/resume.pdf\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.apply_for_job",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.apply_for_job"]
+						},
+						"description": "Apply for a job with resume attachment."
+					}
+				},
+				{
+					"name": "Get My Applications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_my_applications?start=0&page_length=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_my_applications"],
+							"query": [
+								{"key": "start", "value": "0"},
+								{"key": "page_length", "value": "20"}
+							]
+						},
+						"description": "Get all job applications by current user."
+					}
+				}
+			]
+		},
+		{
+			"name": "Live Classes",
+			"description": "Live classes and recordings",
+			"item": [
+				{
+					"name": "Get Upcoming Live Classes",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_my_live_classes",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_my_live_classes"]
+						},
+						"description": "Get upcoming live classes for enrolled batches."
+					}
+				},
+				{
+					"name": "Get Live Class Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_live_class_details?live_class=class-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_live_class_details"],
+							"query": [
+								{"key": "live_class", "value": "class-id"}
+							]
+						},
+						"description": "Get live class details with join URL."
+					}
+				},
+				{
+					"name": "Get Course Recordings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_course_recordings?course=course-id&start=0&page_length=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_course_recordings"],
+							"query": [
+								{"key": "course", "value": "course-id"},
+								{"key": "start", "value": "0"},
+								{"key": "page_length", "value": "20"}
+							]
+						},
+						"description": "Get past class recordings for a course."
+					}
+				}
+			]
+		},
+		{
+			"name": "Certificates",
+			"description": "Certificate listing and download",
+			"item": [
+				{
+					"name": "Get My Certificates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_my_certificates?start=0&page_length=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_my_certificates"],
+							"query": [
+								{"key": "start", "value": "0"},
+								{"key": "page_length", "value": "20"}
+							]
+						},
+						"description": "Get all certificates earned by current user."
+					}
+				},
+				{
+					"name": "Get Certificate Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_certificate_details?certificate=cert-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_certificate_details"],
+							"query": [
+								{"key": "certificate", "value": "cert-id"}
+							]
+						},
+						"description": "Get certificate details with download URL."
+					}
+				}
+			]
+		},
+		{
+			"name": "Profile",
+			"description": "Profile management",
+			"item": [
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"full_name\": \"John Doe\",\n    \"bio\": \"Software Developer\",\n    \"headline\": \"Learning enthusiast\",\n    \"linkedin\": \"https://linkedin.com/in/johndoe\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.update_profile",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.update_profile"]
+						},
+						"description": "Update current user's profile."
+					}
+				},
+				{
+					"name": "Change Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"old_password\": \"currentpassword\",\n    \"new_password\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.change_password",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.change_password"]
+						},
+						"description": "Change current user's password."
+					}
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"description": "Notification management",
+			"item": [
+				{
+					"name": "Get Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_notifications?filters={}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_notifications"],
+							"query": [
+								{"key": "filters", "value": "{}"}
+							]
+						},
+						"description": "Get user notifications."
+					}
+				},
+				{
+					"name": "Mark as Read",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"notification-id\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.mark_as_read",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.mark_as_read"]
+						},
+						"description": "Mark a notification as read."
+					}
+				},
+				{
+					"name": "Mark All as Read",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.mark_all_as_read",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.mark_all_as_read"]
+						},
+						"description": "Mark all notifications as read."
+					}
+				}
+			]
+		},
+		{
+			"name": "Batch",
+			"description": "Batch learning management",
+			"item": [
+				{
+					"name": "Get My Batch",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_my_batch?batch=batch-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_my_batch"],
+							"query": [
+								{"key": "batch", "value": "batch-id"}
+							]
+						},
+						"description": "Get batch details for an enrolled student."
+					}
+				},
+				{
+					"name": "Get Batch Timetable",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_batch_timetable?batch=batch-id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_batch_timetable"],
+							"query": [
+								{"key": "batch", "value": "batch-id"},
+								{"key": "date", "value": "", "disabled": true}
+							]
+						},
+						"description": "Get timetable for a batch. Optionally filter by date."
+					}
+				},
+				{
+					"name": "Get My Batches",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_my_batches",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_my_batches"]
+						},
+						"description": "Get all batches the user is enrolled in."
+					}
+				}
+			]
+		},
+		{
+			"name": "Dashboard",
+			"description": "Dashboard statistics and badges",
+			"item": [
+				{
+					"name": "Get Learning Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_learning_stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_learning_stats"]
+						},
+						"description": "Get aggregated learning statistics for dashboard."
+					}
+				},
+				{
+					"name": "Get My Badges",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_assigned_badges?member=",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_assigned_badges"],
+							"query": [
+								{"key": "member", "value": "", "description": "Leave empty for current user"}
+							]
+						},
+						"description": "Get badges earned by user."
+					}
+				}
+			]
+		},
+		{
+			"name": "Discussions",
+			"description": "Lesson discussions and Q&A",
+			"item": [
+				{
+					"name": "Get Lesson Discussions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.get_lesson_discussions?lesson=lesson-id&start=0&page_length=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.get_lesson_discussions"],
+							"query": [
+								{"key": "lesson", "value": "lesson-id"},
+								{"key": "start", "value": "0"},
+								{"key": "page_length", "value": "20"}
+							]
+						},
+						"description": "Get discussions/comments for a lesson."
+					}
+				},
+				{
+					"name": "Post Discussion",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"lesson\": \"lesson-id\",\n    \"content\": \"I have a question about this topic...\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.post_discussion",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.post_discussion"]
+						},
+						"description": "Post a new discussion on a lesson."
+					}
+				},
+				{
+					"name": "Post Reply",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "token {{api_key}}:{{api_secret}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"comment\": \"comment-id\",\n    \"content\": \"Here's my reply...\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/method/lms.lms.api.post_reply",
+							"host": ["{{base_url}}"],
+							"path": ["api", "method", "lms.lms.api.post_reply"]
+						},
+						"description": "Reply to an existing discussion."
+					}
+				}
+			]
+		}
+	]
+}

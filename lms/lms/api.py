@@ -4029,3 +4029,2120 @@ def get_batch_enrollments(batch, status=None, is_time_limited=None, limit=100, o
 		"offset": offset,
 		"enrollments": enrollments
 	}
+
+
+# ============================================================================
+# STUDENT MOBILE APP APIs
+# These endpoints are designed for the React Native mobile app
+# All endpoints return JSON responses optimized for mobile consumption
+# Authentication: token <api_key>:<api_secret> in Authorization header
+# ============================================================================
+
+
+# ----------------------------------------------------------------------------
+# Helper Functions for Mobile APIs
+# ----------------------------------------------------------------------------
+
+def _verify_student_enrollment(course, user=None):
+	"""
+	Verify user is enrolled in a course.
+	Returns enrollment details if enrolled, raises exception otherwise.
+	"""
+	if not user:
+		user = frappe.session.user
+
+	if user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment",
+		{"member": user, "course": course},
+		["name", "progress", "current_lesson", "enrollment_from_batch", "creation"],
+		as_dict=True
+	)
+
+	if not enrollment:
+		frappe.throw(_("You are not enrolled in this course"))
+
+	# If enrolled via batch, verify batch access is still active
+	if enrollment.enrollment_from_batch:
+		batch_active = frappe.db.exists(
+			"LMS Batch Enrollment",
+			{
+				"member": user,
+				"batch": enrollment.enrollment_from_batch,
+				"status": ["in", ["Active", "Extended"]]
+			}
+		)
+		if not batch_active:
+			frappe.throw(_("Your batch access has expired"))
+
+	return enrollment
+
+
+def _verify_student_batch_enrollment(batch, user=None):
+	"""
+	Verify user has active batch enrollment.
+	Returns enrollment details if active, raises exception otherwise.
+	"""
+	if not user:
+		user = frappe.session.user
+
+	if user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	enrollment = frappe.db.get_value(
+		"LMS Batch Enrollment",
+		{
+			"member": user,
+			"batch": batch,
+			"status": ["in", ["Active", "Extended"]]
+		},
+		["name", "status", "access_start_date", "access_end_date", "is_time_limited", "enrollment_date"],
+		as_dict=True
+	)
+
+	if not enrollment:
+		frappe.throw(_("You do not have active access to this batch"))
+
+	return enrollment
+
+
+def _get_lesson_navigation(lesson_name, course):
+	"""Get previous and next lesson for navigation."""
+	from lms.lms.utils import get_course_outline
+
+	outline = get_course_outline(course, progress=False)
+	all_lessons = []
+
+	for chapter in outline:
+		for lesson in chapter.get("lessons", []):
+			all_lessons.append({
+				"name": lesson.name,
+				"title": lesson.title,
+				"number": lesson.number,
+				"chapter": chapter.name,
+				"chapter_title": chapter.title
+			})
+
+	# Find current lesson index
+	current_idx = None
+	for idx, lesson in enumerate(all_lessons):
+		if lesson["name"] == lesson_name:
+			current_idx = idx
+			break
+
+	prev_lesson = all_lessons[current_idx - 1] if current_idx and current_idx > 0 else None
+	next_lesson = all_lessons[current_idx + 1] if current_idx is not None and current_idx < len(all_lessons) - 1 else None
+
+	return prev_lesson, next_lesson
+
+
+def _get_course_instructors(course):
+	"""Get list of instructors for a course."""
+	instructors = frappe.get_all(
+		"Course Instructor",
+		filters={"parent": course, "parenttype": "LMS Course"},
+		fields=["instructor"],
+		order_by="idx"
+	)
+
+	result = []
+	for inst in instructors:
+		user = frappe.db.get_value(
+			"User",
+			inst.instructor,
+			["name", "full_name", "user_image", "username"],
+			as_dict=True
+		)
+		if user:
+			result.append(user)
+
+	return result
+
+
+# ----------------------------------------------------------------------------
+# Phase 1: Core Course APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_enrolled_courses(start=0, page_length=20):
+	"""
+	Get all courses the current student is enrolled in with progress.
+
+	Args:
+		start: Pagination offset (default 0)
+		page_length: Number of records per page (default 20)
+
+	Returns:
+		dict: {courses: [...], total_count: int}
+
+	Usage:
+		GET /api/method/lms.lms.api.get_enrolled_courses
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	user = frappe.session.user
+
+	# Get total count
+	total_count = frappe.db.count("LMS Enrollment", {"member": user})
+
+	# Get enrollments with pagination
+	enrollments = frappe.get_all(
+		"LMS Enrollment",
+		filters={"member": user},
+		fields=[
+			"name", "course", "progress", "current_lesson",
+			"enrollment_from_batch", "creation"
+		],
+		order_by="modified desc",
+		limit_page_length=cint(page_length),
+		limit_start=cint(start)
+	)
+
+	courses = []
+	for enrollment in enrollments:
+		# Get course details
+		course = frappe.db.get_value(
+			"LMS Course",
+			enrollment.course,
+			[
+				"name", "title", "image", "short_introduction",
+				"published", "lessons", "video_link"
+			],
+			as_dict=True
+		)
+
+		if not course:
+			continue
+
+		# Get instructors
+		course["instructors"] = _get_course_instructors(course.name)
+
+		# Add enrollment info
+		course["progress"] = flt(enrollment.progress, 2)
+		course["current_lesson"] = enrollment.current_lesson
+		course["enrollment_date"] = str(enrollment.creation.date()) if enrollment.creation else None
+		course["enrollment_from_batch"] = enrollment.enrollment_from_batch
+
+		# Get current lesson details if exists
+		if enrollment.current_lesson:
+			lesson_info = frappe.db.get_value(
+				"Course Lesson",
+				enrollment.current_lesson,
+				["title", "chapter"],
+				as_dict=True
+			)
+			if lesson_info:
+				course["current_lesson_title"] = lesson_info.title
+
+		# Calculate completed lessons
+		completed = frappe.db.count(
+			"LMS Course Progress",
+			{"member": user, "course": course.name, "status": "Complete"}
+		)
+		course["completed_lessons"] = completed
+		course["total_lessons"] = course.get("lessons") or 0
+
+		courses.append(course)
+
+	return {
+		"courses": courses,
+		"total_count": total_count
+	}
+
+
+@frappe.whitelist()
+def get_course_details_for_student(course):
+	"""
+	Get complete course details for a student.
+	Includes enrollment info, progress, certificate status.
+
+	Args:
+		course: Course name/ID
+
+	Returns:
+		dict: Complete course details with student-specific info
+
+	Usage:
+		GET /api/method/lms.lms.api.get_course_details_for_student?course=<course_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not course:
+		frappe.throw(_("Course is required"))
+
+	if not frappe.db.exists("LMS Course", course):
+		frappe.throw(_("Course not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get course details
+	course_doc = frappe.db.get_value(
+		"LMS Course",
+		course,
+		[
+			"name", "title", "image", "short_introduction", "description",
+			"video_link", "published", "lessons", "rating",
+			"paid_course", "course_price", "currency",
+			"enable_certification", "paid_certificate"
+		],
+		as_dict=True
+	)
+
+	# Get instructors
+	course_doc["instructors"] = _get_course_instructors(course)
+
+	# Get chapter count
+	course_doc["total_chapters"] = frappe.db.count(
+		"Chapter Reference",
+		{"parent": course}
+	)
+	course_doc["total_lessons"] = course_doc.get("lessons") or 0
+
+	# Get enrollment details
+	enrollment = frappe.db.get_value(
+		"LMS Enrollment",
+		{"member": user, "course": course},
+		["name", "progress", "current_lesson", "enrollment_from_batch", "creation", "certificate"],
+		as_dict=True
+	)
+
+	if enrollment:
+		course_doc["membership"] = {
+			"name": enrollment.name,
+			"progress": flt(enrollment.progress, 2),
+			"current_lesson": enrollment.current_lesson,
+			"enrollment_date": str(enrollment.creation.date()) if enrollment.creation else None,
+			"enrollment_from_batch": enrollment.enrollment_from_batch
+		}
+
+		# Check certificate status
+		course_doc["certificate_earned"] = bool(enrollment.certificate)
+		if enrollment.certificate:
+			course_doc["certificate_name"] = enrollment.certificate
+	else:
+		course_doc["membership"] = None
+		course_doc["certificate_earned"] = False
+
+	# Get reviews summary
+	reviews = frappe.get_all(
+		"LMS Course Review",
+		filters={"course": course},
+		fields=["rating"]
+	)
+	if reviews:
+		course_doc["review_count"] = len(reviews)
+		course_doc["average_rating"] = flt(sum(r.rating for r in reviews) / len(reviews), 1)
+	else:
+		course_doc["review_count"] = 0
+		course_doc["average_rating"] = 0
+
+	return course_doc
+
+
+@frappe.whitelist()
+def get_course_progress(course):
+	"""
+	Get detailed progress for a specific course.
+
+	Args:
+		course: Course name/ID
+
+	Returns:
+		dict: Detailed progress information
+
+	Usage:
+		GET /api/method/lms.lms.api.get_course_progress?course=<course_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not course:
+		frappe.throw(_("Course is required"))
+
+	# Verify enrollment
+	enrollment = _verify_student_enrollment(course)
+	user = frappe.session.user
+
+	# Get course info
+	course_info = frappe.db.get_value(
+		"LMS Course",
+		course,
+		["name", "title", "lessons"],
+		as_dict=True
+	)
+
+	# Get chapter count
+	total_chapters = frappe.db.count("Chapter Reference", {"parent": course})
+
+	# Count completed lessons
+	completed_lessons = frappe.db.count(
+		"LMS Course Progress",
+		{"member": user, "course": course, "status": "Complete"}
+	)
+
+	# Count completed chapters (all lessons in chapter complete)
+	chapters = frappe.get_all(
+		"Chapter Reference",
+		filters={"parent": course},
+		fields=["chapter"],
+		order_by="idx"
+	)
+
+	completed_chapters = 0
+	for chapter in chapters:
+		lesson_count = frappe.db.count("Lesson Reference", {"parent": chapter.chapter})
+		completed_in_chapter = frappe.db.sql("""
+			SELECT COUNT(DISTINCT lcp.lesson)
+			FROM `tabLMS Course Progress` lcp
+			JOIN `tabCourse Lesson` cl ON lcp.lesson = cl.name
+			WHERE lcp.member = %s AND lcp.course = %s
+			AND cl.chapter = %s AND lcp.status = 'Complete'
+		""", (user, course, chapter.chapter))[0][0]
+
+		if lesson_count > 0 and completed_in_chapter >= lesson_count:
+			completed_chapters += 1
+
+	# Get quiz submissions
+	quiz_submissions = frappe.get_all(
+		"LMS Quiz Submission",
+		filters={"member": user},
+		fields=["quiz", "percentage", "passing_percentage"]
+	)
+
+	# Filter quizzes for this course
+	course_quizzes = frappe.get_all(
+		"LMS Quiz",
+		filters={"course": course},
+		pluck="name"
+	)
+
+	quizzes_attempted = 0
+	quizzes_passed = 0
+	for sub in quiz_submissions:
+		if sub.quiz in course_quizzes:
+			quizzes_attempted += 1
+			if sub.percentage >= sub.passing_percentage:
+				quizzes_passed += 1
+
+	# Get assignment submissions
+	course_assignments = frappe.get_all(
+		"LMS Assignment",
+		filters={"course": course},
+		pluck="name"
+	)
+
+	assignments_submitted = frappe.db.count(
+		"LMS Assignment Submission",
+		{"member": user, "assignment": ["in", course_assignments]} if course_assignments else {"member": user, "name": "impossible"}
+	)
+
+	assignments_graded = frappe.db.count(
+		"LMS Assignment Submission",
+		{
+			"member": user,
+			"assignment": ["in", course_assignments],
+			"status": ["in", ["Pass", "Fail"]]
+		} if course_assignments else {"member": user, "name": "impossible"}
+	)
+
+	# Get current lesson info
+	current_lesson_info = None
+	if enrollment.current_lesson:
+		lesson = frappe.db.get_value(
+			"Course Lesson",
+			enrollment.current_lesson,
+			["name", "title", "chapter"],
+			as_dict=True
+		)
+		if lesson:
+			# Get lesson number
+			chapter_ref = frappe.db.get_value(
+				"Chapter Reference",
+				{"parent": course, "chapter": lesson.chapter},
+				"idx"
+			)
+			lesson_ref = frappe.db.get_value(
+				"Lesson Reference",
+				{"parent": lesson.chapter, "lesson": lesson.name},
+				"idx"
+			)
+			chapter_title = frappe.db.get_value("Course Chapter", lesson.chapter, "title")
+
+			current_lesson_info = {
+				"name": lesson.name,
+				"title": lesson.title,
+				"chapter": chapter_title,
+				"number": f"{chapter_ref}-{lesson_ref}" if chapter_ref and lesson_ref else None
+			}
+
+	# Get last activity
+	last_progress = frappe.db.get_value(
+		"LMS Course Progress",
+		{"member": user, "course": course},
+		"modified",
+		order_by="modified desc"
+	)
+
+	return {
+		"course": course,
+		"overall_progress": flt(enrollment.progress, 2),
+		"total_lessons": course_info.lessons or 0,
+		"completed_lessons": completed_lessons,
+		"total_chapters": total_chapters,
+		"completed_chapters": completed_chapters,
+		"quizzes_attempted": quizzes_attempted,
+		"quizzes_passed": quizzes_passed,
+		"assignments_submitted": assignments_submitted,
+		"assignments_graded": assignments_graded,
+		"current_lesson": current_lesson_info,
+		"last_activity": str(last_progress) if last_progress else None
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 2: Chapters & Lessons APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_course_outline_for_student(course):
+	"""
+	Get complete course structure with chapters and lessons for a student.
+	Includes progress information for each lesson.
+
+	Args:
+		course: Course name/ID
+
+	Returns:
+		dict: Course outline with chapters and lessons
+
+	Usage:
+		GET /api/method/lms.lms.api.get_course_outline_for_student?course=<course_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not course:
+		frappe.throw(_("Course is required"))
+
+	if not frappe.db.exists("LMS Course", course):
+		frappe.throw(_("Course not found"), frappe.DoesNotExistError)
+
+	# Verify enrollment (optional - could allow preview)
+	user = frappe.session.user
+	is_enrolled = frappe.db.exists(
+		"LMS Enrollment",
+		{"member": user, "course": course}
+	)
+
+	# Get course title
+	course_title = frappe.db.get_value("LMS Course", course, "title")
+
+	# Get chapters
+	chapters = frappe.get_all(
+		"Chapter Reference",
+		filters={"parent": course},
+		fields=["chapter", "idx"],
+		order_by="idx"
+	)
+
+	outline = []
+	total_lessons = 0
+
+	for chapter_ref in chapters:
+		chapter = frappe.db.get_value(
+			"Course Chapter",
+			chapter_ref.chapter,
+			["name", "title", "is_scorm_package"],
+			as_dict=True
+		)
+
+		if not chapter:
+			continue
+
+		chapter["idx"] = chapter_ref.idx
+
+		# Get lessons for this chapter
+		lessons = frappe.get_all(
+			"Lesson Reference",
+			filters={"parent": chapter.name},
+			fields=["lesson", "idx"],
+			order_by="idx"
+		)
+
+		chapter_lessons = []
+		completed_count = 0
+
+		for lesson_ref in lessons:
+			lesson = frappe.db.get_value(
+				"Course Lesson",
+				lesson_ref.lesson,
+				["name", "title", "include_in_preview", "youtube", "quiz_id", "question"],
+				as_dict=True
+			)
+
+			if not lesson:
+				continue
+
+			lesson["number"] = f"{chapter_ref.idx}-{lesson_ref.idx}"
+			lesson["idx"] = lesson_ref.idx
+			lesson["has_video"] = bool(lesson.youtube)
+			lesson["has_quiz"] = bool(lesson.quiz_id)
+			lesson["has_assignment"] = bool(lesson.question)
+
+			# Check completion status
+			if is_enrolled:
+				is_complete = frappe.db.exists(
+					"LMS Course Progress",
+					{"member": user, "course": course, "lesson": lesson.name, "status": "Complete"}
+				)
+				lesson["is_complete"] = bool(is_complete)
+				if is_complete:
+					completed_count += 1
+			else:
+				lesson["is_complete"] = False
+
+			# Remove raw fields
+			del lesson["youtube"]
+			del lesson["quiz_id"]
+			del lesson["question"]
+
+			chapter_lessons.append(lesson)
+			total_lessons += 1
+
+		chapter["lessons"] = chapter_lessons
+		chapter["lesson_count"] = len(chapter_lessons)
+		chapter["completed_count"] = completed_count
+
+		outline.append(chapter)
+
+	return {
+		"course": course,
+		"title": course_title,
+		"total_lessons": total_lessons,
+		"is_enrolled": bool(is_enrolled),
+		"chapters": outline
+	}
+
+
+@frappe.whitelist()
+def get_lesson_details_for_student(lesson):
+	"""
+	Get full lesson content for viewing.
+	Includes body, video, quiz info, and navigation.
+
+	Args:
+		lesson: Lesson name/ID
+
+	Returns:
+		dict: Complete lesson content
+
+	Usage:
+		GET /api/method/lms.lms.api.get_lesson_details_for_student?lesson=<lesson_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not lesson:
+		frappe.throw(_("Lesson is required"))
+
+	if not frappe.db.exists("Course Lesson", lesson):
+		frappe.throw(_("Lesson not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get lesson details
+	lesson_doc = frappe.db.get_value(
+		"Course Lesson",
+		lesson,
+		[
+			"name", "title", "chapter", "course", "body", "content",
+			"youtube", "quiz_id", "question", "file_type",
+			"include_in_preview", "instructor_notes"
+		],
+		as_dict=True
+	)
+
+	course = lesson_doc.course or frappe.db.get_value("Course Chapter", lesson_doc.chapter, "course")
+
+	# Get chapter info
+	chapter_title = frappe.db.get_value("Course Chapter", lesson_doc.chapter, "title")
+
+	# Get lesson number
+	chapter_idx = frappe.db.get_value(
+		"Chapter Reference",
+		{"parent": course, "chapter": lesson_doc.chapter},
+		"idx"
+	)
+	lesson_idx = frappe.db.get_value(
+		"Lesson Reference",
+		{"parent": lesson_doc.chapter, "lesson": lesson},
+		"idx"
+	)
+	lesson_number = f"{chapter_idx}-{lesson_idx}" if chapter_idx and lesson_idx else None
+
+	# Check enrollment
+	is_enrolled = frappe.db.exists(
+		"LMS Enrollment",
+		{"member": user, "course": course}
+	)
+
+	# Check if content is accessible
+	if not lesson_doc.include_in_preview and not is_enrolled:
+		return {
+			"name": lesson_doc.name,
+			"title": lesson_doc.title,
+			"no_preview": True,
+			"message": _("Please enroll in this course to access this lesson")
+		}
+
+	# Check completion status
+	is_complete = frappe.db.exists(
+		"LMS Course Progress",
+		{"member": user, "course": course, "lesson": lesson, "status": "Complete"}
+	)
+
+	# Get navigation
+	prev_lesson, next_lesson = _get_lesson_navigation(lesson, course)
+
+	# Build response
+	result = {
+		"name": lesson_doc.name,
+		"title": lesson_doc.title,
+		"chapter": lesson_doc.chapter,
+		"chapter_title": chapter_title,
+		"course": course,
+		"number": lesson_number,
+		"body": lesson_doc.body,
+		"content": lesson_doc.content,
+		"youtube": lesson_doc.youtube,
+		"quiz_id": lesson_doc.quiz_id,
+		"has_assignment": bool(lesson_doc.question),
+		"assignment_question": lesson_doc.question if lesson_doc.question else None,
+		"file_type": lesson_doc.file_type,
+		"is_complete": bool(is_complete),
+		"is_enrolled": bool(is_enrolled),
+		"prev_lesson": prev_lesson,
+		"next_lesson": next_lesson
+	}
+
+	return result
+
+
+# ----------------------------------------------------------------------------
+# Phase 3: Quizzes & Assignments APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_lesson_quiz(quiz):
+	"""
+	Get quiz details with questions for taking.
+	Questions are returned without correct answers.
+
+	Args:
+		quiz: Quiz name/ID
+
+	Returns:
+		dict: Quiz with questions (answers hidden)
+
+	Usage:
+		GET /api/method/lms.lms.api.get_lesson_quiz?quiz=<quiz_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not quiz:
+		frappe.throw(_("Quiz is required"))
+
+	if not frappe.db.exists("LMS Quiz", quiz):
+		frappe.throw(_("Quiz not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get quiz details
+	quiz_doc = frappe.db.get_value(
+		"LMS Quiz",
+		quiz,
+		[
+			"name", "title", "total_marks", "passing_percentage",
+			"max_attempts", "duration", "show_answers",
+			"shuffle_questions", "limit_questions_to",
+			"show_submission_history"
+		],
+		as_dict=True
+	)
+
+	# Count previous attempts
+	attempts_made = frappe.db.count(
+		"LMS Quiz Submission",
+		{"quiz": quiz, "member": user}
+	)
+
+	# Check if can attempt
+	can_attempt = True
+	if quiz_doc.max_attempts and attempts_made >= quiz_doc.max_attempts:
+		can_attempt = False
+
+	quiz_doc["attempts_made"] = attempts_made
+	quiz_doc["can_attempt"] = can_attempt
+
+	# Get questions
+	questions = frappe.get_all(
+		"LMS Quiz Question",
+		filters={"parent": quiz},
+		fields=["name", "question", "question_detail", "type", "marks",
+				"option_1", "option_2", "option_3", "option_4", "multiple"],
+		order_by="idx"
+	)
+
+	# Format questions (hide answers)
+	formatted_questions = []
+	for q in questions:
+		question = {
+			"name": q.name,
+			"question": q.question_detail or q.question,
+			"type": q.type,
+			"marks": q.marks,
+			"multiple": q.multiple
+		}
+
+		# Add options for choice questions
+		if q.type == "Choices":
+			options = []
+			for i in range(1, 5):
+				opt = q.get(f"option_{i}")
+				if opt:
+					options.append({"idx": i, "option": opt})
+			question["options"] = options
+
+		formatted_questions.append(question)
+
+	# Shuffle if enabled
+	if quiz_doc.shuffle_questions:
+		import random
+		random.shuffle(formatted_questions)
+
+	# Limit questions if set
+	if quiz_doc.limit_questions_to:
+		formatted_questions = formatted_questions[:cint(quiz_doc.limit_questions_to)]
+
+	quiz_doc["questions"] = formatted_questions
+
+	return quiz_doc
+
+
+@frappe.whitelist(methods=["POST"])
+def submit_quiz_answers(quiz, answers):
+	"""
+	Submit quiz answers and get result.
+	This wraps the existing quiz_summary function for mobile.
+
+	Args:
+		quiz: Quiz name/ID
+		answers: JSON array of {question: "name", answer: "selected option(s)"}
+
+	Returns:
+		dict: Quiz result with score
+
+	Usage:
+		POST /api/method/lms.lms.api.submit_quiz_answers
+		Body: {"quiz": "quiz-id", "answers": [{"question": "q1", "answer": ["1"]}]}
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not quiz:
+		frappe.throw(_("Quiz is required"))
+
+	if not answers:
+		frappe.throw(_("Answers are required"))
+
+	# Parse answers if string
+	if isinstance(answers, str):
+		answers = json.loads(answers)
+
+	# Convert mobile format to existing format
+	# Mobile sends: [{"question": "name", "answer": ["1"]}]
+	# Existing expects: [{"question_name": "name", "answer": [...], "is_correct": [...]}]
+
+	from lms.lms.doctype.lms_quiz.lms_quiz import quiz_summary
+
+	# Format answers for existing function
+	formatted_results = []
+	for ans in answers:
+		question_name = ans.get("question")
+		user_answer = ans.get("answer", [])
+
+		if isinstance(user_answer, str):
+			user_answer = [user_answer]
+
+		# Get question details to check answer
+		question = frappe.db.get_value(
+			"LMS Quiz Question",
+			{"parent": quiz, "name": question_name},
+			["type", "option_1", "option_2", "option_3", "option_4",
+			 "is_correct_1", "is_correct_2", "is_correct_3", "is_correct_4"],
+			as_dict=True
+		)
+
+		is_correct = []
+		if question and question.type == "Choices":
+			for i in range(1, 5):
+				opt = question.get(f"option_{i}")
+				if opt and str(i) in user_answer:
+					is_correct.append(1 if question.get(f"is_correct_{i}") else 0)
+				elif question.get(f"is_correct_{i}"):
+					is_correct.append(2)  # Correct but not selected
+				else:
+					is_correct.append(0)
+
+		formatted_results.append({
+			"question_name": question_name,
+			"answer": user_answer,
+			"is_correct": is_correct
+		})
+
+	# Call existing function
+	result = quiz_summary(quiz, json.dumps(formatted_results))
+
+	return {
+		"submission": result.get("submission"),
+		"score": result.get("score"),
+		"score_out_of": result.get("score_out_of"),
+		"percentage": flt(result.get("percentage"), 2),
+		"passing_percentage": frappe.db.get_value("LMS Quiz", quiz, "passing_percentage"),
+		"passed": result.get("percentage", 0) >= frappe.db.get_value("LMS Quiz", quiz, "passing_percentage"),
+		"is_open_ended": result.get("is_open_ended", False)
+	}
+
+
+@frappe.whitelist()
+def get_quiz_result(submission):
+	"""
+	Get detailed result of a quiz submission.
+
+	Args:
+		submission: Quiz submission name/ID
+
+	Returns:
+		dict: Detailed quiz result
+
+	Usage:
+		GET /api/method/lms.lms.api.get_quiz_result?submission=<submission_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not submission:
+		frappe.throw(_("Submission is required"))
+
+	if not frappe.db.exists("LMS Quiz Submission", submission):
+		frappe.throw(_("Submission not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get submission
+	sub = frappe.db.get_value(
+		"LMS Quiz Submission",
+		submission,
+		["name", "quiz", "member", "score", "score_out_of", "percentage", "passing_percentage", "creation"],
+		as_dict=True
+	)
+
+	# Verify ownership
+	if sub.member != user:
+		frappe.throw(_("You can only view your own submissions"))
+
+	# Get quiz info
+	quiz = frappe.db.get_value(
+		"LMS Quiz",
+		sub.quiz,
+		["title", "show_answers"],
+		as_dict=True
+	)
+
+	result = {
+		"name": sub.name,
+		"quiz": sub.quiz,
+		"quiz_title": quiz.title,
+		"score": sub.score,
+		"score_out_of": sub.score_out_of,
+		"percentage": flt(sub.percentage, 2),
+		"passing_percentage": sub.passing_percentage,
+		"passed": sub.percentage >= sub.passing_percentage,
+		"submitted_on": str(sub.creation)
+	}
+
+	# Include detailed results if show_answers is enabled
+	if quiz.show_answers:
+		results = frappe.get_all(
+			"LMS Quiz Result",
+			filters={"parent": submission},
+			fields=["question_name", "question", "answer", "is_correct", "marks", "marks_out_of"],
+			order_by="idx"
+		)
+		result["detailed_results"] = results
+
+	return result
+
+
+@frappe.whitelist()
+def get_course_assignments(course):
+	"""
+	Get all assignments for a course with submission status.
+
+	Args:
+		course: Course name/ID
+
+	Returns:
+		dict: List of assignments with status
+
+	Usage:
+		GET /api/method/lms.lms.api.get_course_assignments?course=<course_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not course:
+		frappe.throw(_("Course is required"))
+
+	user = frappe.session.user
+
+	# Get assignments for this course
+	assignments = frappe.get_all(
+		"LMS Assignment",
+		filters={"course": course},
+		fields=["name", "title", "type", "question", "grade_assignment"],
+		order_by="creation"
+	)
+
+	result = []
+	for assignment in assignments:
+		# Check for submission
+		submission = frappe.db.get_value(
+			"LMS Assignment Submission",
+			{"assignment": assignment.name, "member": user},
+			["name", "status", "creation", "comments"],
+			as_dict=True
+		)
+
+		assignment_data = {
+			"name": assignment.name,
+			"title": assignment.title,
+			"type": assignment.type,
+			"question": assignment.question,
+			"requires_grading": assignment.grade_assignment,
+			"submission": None
+		}
+
+		if submission:
+			assignment_data["submission"] = {
+				"name": submission.name,
+				"status": submission.status,
+				"submitted_on": str(submission.creation.date()) if submission.creation else None,
+				"comments": submission.comments
+			}
+
+		result.append(assignment_data)
+
+	return {"assignments": result}
+
+
+@frappe.whitelist(methods=["POST"])
+def submit_assignment(assignment, answer=None, attachment=None):
+	"""
+	Submit an assignment.
+
+	Args:
+		assignment: Assignment name/ID
+		answer: Text answer (for URL/Text types)
+		attachment: File attachment path (for Document/PDF/Image types)
+
+	Returns:
+		dict: Submission confirmation
+
+	Usage:
+		POST /api/method/lms.lms.api.submit_assignment
+		Body: {"assignment": "id", "answer": "text"} or with file upload
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not assignment:
+		frappe.throw(_("Assignment is required"))
+
+	if not frappe.db.exists("LMS Assignment", assignment):
+		frappe.throw(_("Assignment not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get assignment details
+	assignment_doc = frappe.db.get_value(
+		"LMS Assignment",
+		assignment,
+		["name", "title", "type", "course", "grade_assignment"],
+		as_dict=True
+	)
+
+	# Check if already submitted
+	existing = frappe.db.exists(
+		"LMS Assignment Submission",
+		{"assignment": assignment, "member": user}
+	)
+
+	if existing:
+		# Update existing submission
+		submission = frappe.get_doc("LMS Assignment Submission", existing)
+	else:
+		# Create new submission
+		submission = frappe.new_doc("LMS Assignment Submission")
+		submission.assignment = assignment
+		submission.member = user
+		submission.type = assignment_doc.type
+		submission.course = assignment_doc.course
+
+	# Set answer/attachment based on type
+	if assignment_doc.type in ["Text", "URL"]:
+		if not answer:
+			frappe.throw(_("Answer is required for this assignment type"))
+		submission.answer = answer
+	else:
+		if not attachment:
+			frappe.throw(_("File attachment is required for this assignment type"))
+		submission.assignment_attachment = attachment
+
+	# Set status
+	if assignment_doc.grade_assignment:
+		submission.status = "Not Graded"
+	else:
+		submission.status = "Not Applicable"
+
+	submission.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {
+		"message": _("Assignment submitted successfully"),
+		"submission": {
+			"name": submission.name,
+			"assignment": assignment,
+			"status": submission.status,
+			"submitted_on": str(submission.creation.date()) if submission.creation else nowdate()
+		}
+	}
+
+
+@frappe.whitelist()
+def get_assignment_status(submission):
+	"""
+	Get status of an assignment submission with feedback.
+
+	Args:
+		submission: Submission name/ID
+
+	Returns:
+		dict: Submission status and feedback
+
+	Usage:
+		GET /api/method/lms.lms.api.get_assignment_status?submission=<submission_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not submission:
+		frappe.throw(_("Submission is required"))
+
+	if not frappe.db.exists("LMS Assignment Submission", submission):
+		frappe.throw(_("Submission not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get submission
+	sub = frappe.db.get_value(
+		"LMS Assignment Submission",
+		submission,
+		[
+			"name", "assignment", "assignment_title", "member",
+			"type", "status", "comments", "evaluator",
+			"answer", "assignment_attachment", "creation"
+		],
+		as_dict=True
+	)
+
+	# Verify ownership
+	if sub.member != user:
+		frappe.throw(_("You can only view your own submissions"))
+
+	# Get evaluator name if exists
+	evaluator_name = None
+	if sub.evaluator:
+		evaluator_name = frappe.db.get_value("User", sub.evaluator, "full_name")
+
+	return {
+		"name": sub.name,
+		"assignment": sub.assignment,
+		"assignment_title": sub.assignment_title,
+		"type": sub.type,
+		"status": sub.status,
+		"comments": sub.comments,
+		"evaluator": evaluator_name,
+		"answer": sub.answer,
+		"attachment": sub.assignment_attachment,
+		"submitted_on": str(sub.creation) if sub.creation else None
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 4: Jobs APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist(methods=["POST"])
+def apply_for_job(job, resume):
+	"""
+	Apply for a job opportunity.
+
+	Args:
+		job: Job Opportunity name/ID
+		resume: Resume file attachment path
+
+	Returns:
+		dict: Application confirmation
+
+	Usage:
+		POST /api/method/lms.lms.api.apply_for_job
+		Body: {"job": "job-id", "resume": "/files/resume.pdf"}
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not job:
+		frappe.throw(_("Job is required"))
+
+	if not resume:
+		frappe.throw(_("Resume is required"))
+
+	if not frappe.db.exists("Job Opportunity", job):
+		frappe.throw(_("Job not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Check if already applied
+	existing = frappe.db.exists(
+		"LMS Job Application",
+		{"job": job, "user": user}
+	)
+
+	if existing:
+		frappe.throw(_("You have already applied for this job"))
+
+	# Get job details
+	job_doc = frappe.db.get_value(
+		"Job Opportunity",
+		job,
+		["job_title", "company_name", "status"],
+		as_dict=True
+	)
+
+	if job_doc.status != "Open":
+		frappe.throw(_("This job is no longer accepting applications"))
+
+	# Create application
+	application = frappe.new_doc("LMS Job Application")
+	application.user = user
+	application.job = job
+	application.resume = resume
+	application.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {
+		"message": _("Application submitted successfully"),
+		"application": {
+			"name": application.name,
+			"job": job,
+			"job_title": job_doc.job_title,
+			"company": job_doc.company_name,
+			"applied_on": str(application.creation.date()) if application.creation else nowdate()
+		}
+	}
+
+
+@frappe.whitelist()
+def get_my_applications(start=0, page_length=20):
+	"""
+	Get all job applications by current user.
+
+	Args:
+		start: Pagination offset (default 0)
+		page_length: Records per page (default 20)
+
+	Returns:
+		dict: Applications list with pagination
+
+	Usage:
+		GET /api/method/lms.lms.api.get_my_applications
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	user = frappe.session.user
+
+	# Get total count
+	total_count = frappe.db.count("LMS Job Application", {"user": user})
+
+	# Get applications
+	applications = frappe.get_all(
+		"LMS Job Application",
+		filters={"user": user},
+		fields=["name", "job", "job_title", "company", "resume", "creation"],
+		order_by="creation desc",
+		limit_page_length=cint(page_length),
+		limit_start=cint(start)
+	)
+
+	# Enhance with job details
+	for app in applications:
+		job_status = frappe.db.get_value("Job Opportunity", app.job, "status")
+		app["job_status"] = job_status
+		app["applied_on"] = str(app.creation.date()) if app.creation else None
+		del app["creation"]
+
+	return {
+		"applications": applications,
+		"total_count": total_count
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 5: Live Classes APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_live_class_details(live_class):
+	"""
+	Get details of a specific live class including join URL.
+
+	Args:
+		live_class: Live class name/ID
+
+	Returns:
+		dict: Live class details with join URL
+
+	Usage:
+		GET /api/method/lms.lms.api.get_live_class_details?live_class=<class_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not live_class:
+		frappe.throw(_("Live class is required"))
+
+	if not frappe.db.exists("LMS Live Class", live_class):
+		frappe.throw(_("Live class not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get live class details
+	lc = frappe.db.get_value(
+		"LMS Live Class",
+		live_class,
+		[
+			"name", "title", "description", "date", "time",
+			"duration", "timezone", "host", "batch_name",
+			"join_url", "password", "auto_recording"
+		],
+		as_dict=True
+	)
+
+	# Verify access through batch enrollment
+	if lc.batch_name:
+		has_access = frappe.db.exists(
+			"LMS Batch Enrollment",
+			{
+				"member": user,
+				"batch": lc.batch_name,
+				"status": ["in", ["Active", "Extended"]]
+			}
+		)
+		if not has_access:
+			frappe.throw(_("You do not have access to this live class"))
+
+	# Get host name
+	host_name = frappe.db.get_value("User", lc.host, "full_name")
+
+	# Get batch title
+	batch_title = None
+	if lc.batch_name:
+		batch_title = frappe.db.get_value("LMS Batch", lc.batch_name, "title")
+
+	# Check if class is upcoming or past
+	from datetime import datetime, time as dt_time
+	class_datetime = datetime.combine(getdate(lc.date), dt_time.fromisoformat(str(lc.time)))
+	now_datetime = get_datetime(now())
+
+	is_upcoming = class_datetime > now_datetime
+	can_join = not is_upcoming or (class_datetime - now_datetime).total_seconds() <= 900  # 15 min before
+
+	return {
+		"name": lc.name,
+		"title": lc.title,
+		"description": lc.description,
+		"date": str(lc.date),
+		"time": str(lc.time),
+		"duration": lc.duration,
+		"timezone": lc.timezone,
+		"host": lc.host,
+		"host_name": host_name,
+		"batch": lc.batch_name,
+		"batch_title": batch_title,
+		"join_url": lc.join_url if can_join else None,
+		"password": lc.password if can_join else None,
+		"is_upcoming": is_upcoming,
+		"can_join": can_join,
+		"has_recording": lc.auto_recording == "Cloud"
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 6: Certificates APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_my_certificates(start=0, page_length=20):
+	"""
+	Get all certificates earned by current user.
+
+	Args:
+		start: Pagination offset (default 0)
+		page_length: Records per page (default 20)
+
+	Returns:
+		dict: Certificates list with pagination
+
+	Usage:
+		GET /api/method/lms.lms.api.get_my_certificates
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	user = frappe.session.user
+
+	# Get total count
+	total_count = frappe.db.count("LMS Certificate", {"member": user})
+
+	# Get certificates
+	certificates = frappe.get_all(
+		"LMS Certificate",
+		filters={"member": user},
+		fields=[
+			"name", "course", "course_title", "batch_name", "batch_title",
+			"issue_date", "expiry_date", "template", "published"
+		],
+		order_by="issue_date desc",
+		limit_page_length=cint(page_length),
+		limit_start=cint(start)
+	)
+
+	# Add download URLs
+	for cert in certificates:
+		cert["download_url"] = f"/api/method/frappe.utils.print_format.download_pdf?doctype=LMS%20Certificate&name={cert.name}&format={cert.template or 'Standard'}"
+		cert["issue_date"] = str(cert.issue_date) if cert.issue_date else None
+		cert["expiry_date"] = str(cert.expiry_date) if cert.expiry_date else None
+
+	return {
+		"certificates": certificates,
+		"total_count": total_count
+	}
+
+
+@frappe.whitelist()
+def get_certificate_details(certificate):
+	"""
+	Get certificate details with download URL.
+
+	Args:
+		certificate: Certificate name/ID
+
+	Returns:
+		dict: Certificate details
+
+	Usage:
+		GET /api/method/lms.lms.api.get_certificate_details?certificate=<cert_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not certificate:
+		frappe.throw(_("Certificate is required"))
+
+	if not frappe.db.exists("LMS Certificate", certificate):
+		frappe.throw(_("Certificate not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Get certificate
+	cert = frappe.db.get_value(
+		"LMS Certificate",
+		certificate,
+		[
+			"name", "member", "member_name", "course", "course_title",
+			"batch_name", "batch_title", "issue_date", "expiry_date",
+			"template", "evaluator", "evaluator_name", "published"
+		],
+		as_dict=True
+	)
+
+	# Verify ownership
+	if cert.member != user:
+		frappe.throw(_("You can only view your own certificates"))
+
+	cert["download_url"] = f"/api/method/frappe.utils.print_format.download_pdf?doctype=LMS%20Certificate&name={cert.name}&format={cert.template or 'Standard'}"
+	cert["issue_date"] = str(cert.issue_date) if cert.issue_date else None
+	cert["expiry_date"] = str(cert.expiry_date) if cert.expiry_date else None
+
+	return cert
+
+
+# ----------------------------------------------------------------------------
+# Phase 7: Profile APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist(methods=["POST"])
+def update_profile(full_name=None, bio=None, headline=None, user_image=None,
+				   linkedin=None, github=None, twitter=None):
+	"""
+	Update current user's profile.
+
+	Args:
+		full_name: User's full name
+		bio: User biography
+		headline: Professional headline
+		user_image: Profile image URL
+		linkedin/github/twitter: Social links
+
+	Returns:
+		dict: Updated profile
+
+	Usage:
+		POST /api/method/lms.lms.api.update_profile
+		Body: {"full_name": "John Doe", "bio": "Developer"}
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	user = frappe.session.user
+	user_doc = frappe.get_doc("User", user)
+
+	# Update fields if provided
+	if full_name is not None:
+		user_doc.full_name = full_name
+		# Split into first/last name
+		names = full_name.split(" ", 1)
+		user_doc.first_name = names[0]
+		user_doc.last_name = names[1] if len(names) > 1 else ""
+
+	if bio is not None:
+		user_doc.bio = bio
+
+	if headline is not None:
+		user_doc.headline = headline
+
+	if user_image is not None:
+		user_doc.user_image = user_image
+
+	if linkedin is not None:
+		user_doc.linkedin = linkedin
+
+	if github is not None:
+		user_doc.github = github
+
+	if twitter is not None:
+		user_doc.twitter = twitter
+
+	user_doc.flags.ignore_permissions = True
+	user_doc.save()
+	frappe.db.commit()
+
+	return {
+		"message": _("Profile updated successfully"),
+		"profile": {
+			"name": user_doc.name,
+			"email": user_doc.email,
+			"full_name": user_doc.full_name,
+			"username": user_doc.username,
+			"user_image": user_doc.user_image,
+			"bio": user_doc.bio,
+			"headline": user_doc.headline,
+			"linkedin": user_doc.linkedin,
+			"github": user_doc.github,
+			"twitter": user_doc.twitter
+		}
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def change_password(old_password, new_password):
+	"""
+	Change current user's password.
+
+	Args:
+		old_password: Current password
+		new_password: New password (min 6 characters)
+
+	Returns:
+		dict: Success message
+
+	Usage:
+		POST /api/method/lms.lms.api.change_password
+		Body: {"old_password": "old123", "new_password": "new456"}
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not old_password:
+		frappe.throw(_("Current password is required"))
+
+	if not new_password:
+		frappe.throw(_("New password is required"))
+
+	if len(new_password) < 6:
+		frappe.throw(_("Password must be at least 6 characters long"))
+
+	user = frappe.session.user
+
+	# Verify old password
+	from frappe.utils.password import check_password as validate_password
+	try:
+		validate_password(user, old_password)
+	except frappe.AuthenticationError:
+		frappe.throw(_("Current password is incorrect"), frappe.AuthenticationError)
+
+	# Update password
+	from frappe.utils.password import update_password
+	update_password(user, new_password)
+	frappe.db.commit()
+
+	return {
+		"message": _("Password changed successfully")
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 8: Batch APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_my_batch(batch):
+	"""
+	Get batch details for an enrolled student.
+
+	Args:
+		batch: Batch name/ID
+
+	Returns:
+		dict: Batch details with enrollment info
+
+	Usage:
+		GET /api/method/lms.lms.api.get_my_batch?batch=<batch_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not batch:
+		frappe.throw(_("Batch is required"))
+
+	if not frappe.db.exists("LMS Batch", batch):
+		frappe.throw(_("Batch not found"), frappe.DoesNotExistError)
+
+	# Verify enrollment
+	enrollment = _verify_student_batch_enrollment(batch)
+
+	# Get batch details
+	batch_doc = frappe.db.get_value(
+		"LMS Batch",
+		batch,
+		[
+			"name", "title", "description", "batch_details",
+			"start_date", "end_date", "start_time", "end_time",
+			"timezone", "certification", "medium", "category"
+		],
+		as_dict=True
+	)
+
+	# Get courses in batch
+	batch_courses = frappe.get_all(
+		"Batch Course",
+		filters={"parent": batch},
+		fields=["course", "idx"],
+		order_by="idx"
+	)
+
+	courses = []
+	for bc in batch_courses:
+		course = frappe.db.get_value(
+			"LMS Course",
+			bc.course,
+			["name", "title", "image", "short_introduction", "lessons"],
+			as_dict=True
+		)
+		if course:
+			courses.append(course)
+
+	batch_doc["courses"] = courses
+
+	# Get instructors
+	instructors = frappe.get_all(
+		"Course Instructor",
+		filters={"parent": batch, "parenttype": "LMS Batch"},
+		fields=["instructor"],
+		order_by="idx"
+	)
+
+	batch_doc["instructors"] = []
+	for inst in instructors:
+		user = frappe.db.get_value(
+			"User",
+			inst.instructor,
+			["name", "full_name", "user_image"],
+			as_dict=True
+		)
+		if user:
+			batch_doc["instructors"].append(user)
+
+	# Add enrollment info
+	batch_doc["enrollment"] = {
+		"name": enrollment.name,
+		"status": enrollment.status,
+		"access_start_date": str(enrollment.access_start_date) if enrollment.access_start_date else None,
+		"access_end_date": str(enrollment.access_end_date) if enrollment.access_end_date else None,
+		"is_time_limited": enrollment.is_time_limited,
+		"enrollment_date": str(enrollment.enrollment_date) if enrollment.enrollment_date else None
+	}
+
+	# Format dates
+	batch_doc["start_date"] = str(batch_doc.start_date) if batch_doc.start_date else None
+	batch_doc["end_date"] = str(batch_doc.end_date) if batch_doc.end_date else None
+	batch_doc["start_time"] = str(batch_doc.start_time) if batch_doc.start_time else None
+	batch_doc["end_time"] = str(batch_doc.end_time) if batch_doc.end_time else None
+
+	return batch_doc
+
+
+@frappe.whitelist()
+def get_batch_timetable(batch, date=None):
+	"""
+	Get timetable for a batch.
+
+	Args:
+		batch: Batch name/ID
+		date: Specific date (optional, returns full timetable if not provided)
+
+	Returns:
+		dict: Timetable entries
+
+	Usage:
+		GET /api/method/lms.lms.api.get_batch_timetable?batch=<batch_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not batch:
+		frappe.throw(_("Batch is required"))
+
+	# Verify enrollment
+	_verify_student_batch_enrollment(batch)
+
+	# Get timetable entries
+	filters = {"parent": batch}
+
+	timetable = frappe.get_all(
+		"LMS Batch Timetable",
+		filters=filters,
+		fields=[
+			"date", "start_time", "end_time", "duration",
+			"reference_doctype", "reference_docname", "title", "milestone"
+		],
+		order_by="date, start_time"
+	)
+
+	# Group by date
+	grouped = {}
+	for entry in timetable:
+		entry_date = str(entry.date) if entry.date else "No Date"
+
+		if date and entry_date != date:
+			continue
+
+		if entry_date not in grouped:
+			grouped[entry_date] = {
+				"date": entry_date,
+				"day": getdate(entry.date).strftime("%A") if entry.date else None,
+				"entries": []
+			}
+
+		grouped[entry_date]["entries"].append({
+			"start_time": str(entry.start_time) if entry.start_time else None,
+			"end_time": str(entry.end_time) if entry.end_time else None,
+			"duration": entry.duration,
+			"reference_doctype": entry.reference_doctype,
+			"reference_docname": entry.reference_docname,
+			"title": entry.title,
+			"milestone": entry.milestone
+		})
+
+	# Get legends
+	legends = frappe.get_all(
+		"LMS Timetable Legend",
+		filters={"parent": batch},
+		fields=["legend", "color"]
+	)
+
+	return {
+		"batch": batch,
+		"timetable": list(grouped.values()),
+		"legends": legends
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 9: Dashboard/Stats APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_learning_stats():
+	"""
+	Get aggregated learning statistics for student dashboard.
+
+	Returns:
+		dict: Learning statistics
+
+	Usage:
+		GET /api/method/lms.lms.api.get_learning_stats
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	user = frappe.session.user
+
+	# Course stats
+	enrolled_courses = frappe.db.count("LMS Enrollment", {"member": user})
+
+	completed_courses = frappe.db.sql("""
+		SELECT COUNT(*) FROM `tabLMS Enrollment`
+		WHERE member = %s AND progress >= 100
+	""", (user,))[0][0]
+
+	in_progress_courses = enrolled_courses - completed_courses
+
+	# Lesson stats
+	total_lessons_completed = frappe.db.count(
+		"LMS Course Progress",
+		{"member": user, "status": "Complete"}
+	)
+
+	# Quiz stats
+	quiz_submissions = frappe.get_all(
+		"LMS Quiz Submission",
+		filters={"member": user},
+		fields=["percentage", "passing_percentage"]
+	)
+	total_quizzes_passed = sum(
+		1 for q in quiz_submissions
+		if q.percentage >= q.passing_percentage
+	)
+
+	# Assignment stats
+	total_assignments_submitted = frappe.db.count(
+		"LMS Assignment Submission",
+		{"member": user}
+	)
+
+	# Certificate stats
+	certificates_earned = frappe.db.count("LMS Certificate", {"member": user})
+
+	# Streak info
+	streak_info = frappe.db.get_value(
+		"User",
+		user,
+		["current_streak", "longest_streak"],
+		as_dict=True
+	) or {"current_streak": 0, "longest_streak": 0}
+
+	# Badge count
+	badges = frappe.db.count("LMS Badge Assignment", {"member": user})
+
+	# Upcoming live classes
+	upcoming_classes = frappe.db.sql("""
+		SELECT COUNT(DISTINCT lc.name)
+		FROM `tabLMS Live Class` lc
+		JOIN `tabLMS Batch Enrollment` be ON lc.batch_name = be.batch
+		WHERE be.member = %s
+		AND be.status IN ('Active', 'Extended')
+		AND lc.date >= %s
+	""", (user, nowdate()))[0][0]
+
+	# Recent activity (last 5)
+	recent_activity = []
+
+	# Recent lesson completions
+	recent_lessons = frappe.get_all(
+		"LMS Course Progress",
+		filters={"member": user, "status": "Complete"},
+		fields=["lesson", "course", "modified"],
+		order_by="modified desc",
+		limit=5
+	)
+
+	for lesson in recent_lessons:
+		lesson_title = frappe.db.get_value("Course Lesson", lesson.lesson, "title")
+		course_title = frappe.db.get_value("LMS Course", lesson.course, "title")
+		recent_activity.append({
+			"type": "lesson_completed",
+			"title": f"Completed: {lesson_title}",
+			"course": course_title,
+			"timestamp": str(lesson.modified)
+		})
+
+	# Sort by timestamp and limit
+	recent_activity.sort(key=lambda x: x["timestamp"], reverse=True)
+	recent_activity = recent_activity[:5]
+
+	return {
+		"enrolled_courses": enrolled_courses,
+		"completed_courses": completed_courses,
+		"in_progress_courses": in_progress_courses,
+		"total_lessons_completed": total_lessons_completed,
+		"total_quizzes_passed": total_quizzes_passed,
+		"total_assignments_submitted": total_assignments_submitted,
+		"certificates_earned": certificates_earned,
+		"current_streak": streak_info.get("current_streak") or 0,
+		"longest_streak": streak_info.get("longest_streak") or 0,
+		"badges": badges,
+		"upcoming_live_classes": upcoming_classes,
+		"recent_activity": recent_activity
+	}
+
+
+# ----------------------------------------------------------------------------
+# Phase 10: Discussions APIs
+# ----------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_lesson_discussions(lesson, start=0, page_length=20):
+	"""
+	Get discussions/comments for a lesson.
+
+	Args:
+		lesson: Lesson name/ID
+		start: Pagination offset
+		page_length: Records per page
+
+	Returns:
+		dict: Discussions list
+
+	Usage:
+		GET /api/method/lms.lms.api.get_lesson_discussions?lesson=<lesson_id>
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not lesson:
+		frappe.throw(_("Lesson is required"))
+
+	# Get total count
+	total_count = frappe.db.count(
+		"Comment",
+		{
+			"reference_doctype": "Course Lesson",
+			"reference_name": lesson,
+			"comment_type": "Comment"
+		}
+	)
+
+	# Get discussions
+	discussions = frappe.get_all(
+		"Comment",
+		filters={
+			"reference_doctype": "Course Lesson",
+			"reference_name": lesson,
+			"comment_type": "Comment"
+		},
+		fields=["name", "content", "owner", "creation", "modified"],
+		order_by="creation desc",
+		limit_page_length=cint(page_length),
+		limit_start=cint(start)
+	)
+
+	# Enhance with user info
+	for disc in discussions:
+		user = frappe.db.get_value(
+			"User",
+			disc.owner,
+			["full_name", "user_image"],
+			as_dict=True
+		)
+		disc["author_name"] = user.full_name if user else disc.owner
+		disc["author_image"] = user.user_image if user else None
+		disc["created_on"] = str(disc.creation)
+		del disc["owner"]
+		del disc["creation"]
+
+		# Get reply count
+		disc["reply_count"] = frappe.db.count(
+			"Comment",
+			{
+				"reference_doctype": "Comment",
+				"reference_name": disc.name,
+				"comment_type": "Comment"
+			}
+		)
+
+	return {
+		"discussions": discussions,
+		"total_count": total_count
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def post_discussion(lesson, content):
+	"""
+	Post a new discussion/comment on a lesson.
+
+	Args:
+		lesson: Lesson name/ID
+		content: Discussion content
+
+	Returns:
+		dict: Created discussion
+
+	Usage:
+		POST /api/method/lms.lms.api.post_discussion
+		Body: {"lesson": "lesson-id", "content": "Question text"}
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not lesson:
+		frappe.throw(_("Lesson is required"))
+
+	if not content:
+		frappe.throw(_("Content is required"))
+
+	if not frappe.db.exists("Course Lesson", lesson):
+		frappe.throw(_("Lesson not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Create comment
+	comment = frappe.new_doc("Comment")
+	comment.comment_type = "Comment"
+	comment.reference_doctype = "Course Lesson"
+	comment.reference_name = lesson
+	comment.content = content
+	comment.comment_email = user
+	comment.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	# Get user info
+	user_info = frappe.db.get_value(
+		"User",
+		user,
+		["full_name", "user_image"],
+		as_dict=True
+	)
+
+	return {
+		"message": _("Discussion posted successfully"),
+		"discussion": {
+			"name": comment.name,
+			"content": comment.content,
+			"author_name": user_info.full_name if user_info else user,
+			"author_image": user_info.user_image if user_info else None,
+			"created_on": str(comment.creation)
+		}
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def post_reply(comment, content):
+	"""
+	Reply to an existing discussion.
+
+	Args:
+		comment: Parent comment name/ID
+		content: Reply content
+
+	Returns:
+		dict: Created reply
+
+	Usage:
+		POST /api/method/lms.lms.api.post_reply
+		Body: {"comment": "comment-id", "content": "Reply text"}
+		Headers: Authorization: token <api_key>:<api_secret>
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	if not comment:
+		frappe.throw(_("Comment is required"))
+
+	if not content:
+		frappe.throw(_("Content is required"))
+
+	if not frappe.db.exists("Comment", comment):
+		frappe.throw(_("Comment not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Create reply
+	reply = frappe.new_doc("Comment")
+	reply.comment_type = "Comment"
+	reply.reference_doctype = "Comment"
+	reply.reference_name = comment
+	reply.content = content
+	reply.comment_email = user
+	reply.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	# Get user info
+	user_info = frappe.db.get_value(
+		"User",
+		user,
+		["full_name", "user_image"],
+		as_dict=True
+	)
+
+	return {
+		"message": _("Reply posted successfully"),
+		"reply": {
+			"name": reply.name,
+			"content": reply.content,
+			"author_name": user_info.full_name if user_info else user,
+			"author_image": user_info.user_image if user_info else None,
+			"created_on": str(reply.creation)
+		}
+	}
