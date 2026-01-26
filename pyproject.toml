@@ -13,6 +13,7 @@ dependencies = [
     "markdown~=3.5.1",
     "beautifulsoup4>=4.12,<4.14",
     "lxml~=6.0.2",
+    "cairocffi==1.5.1",
     "razorpay~=1.4.1",
     "fuzzywuzzy~=0.18.0",
 ]
@@ -63,3 +64,6 @@ ignore = [
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
+
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<=17.0.0-dev"
