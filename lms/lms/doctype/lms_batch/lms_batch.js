@@ -52,6 +52,16 @@ frappe.ui.form.on("LMS Batch", {
 			`/lms/batches/details/${frm.doc.name}`,
 			"See on website"
 		);
+
+		if (
+			frappe.user_roles.includes("Moderator") ||
+			frappe.user_roles.includes("Course Creator") ||
+			frappe.user_roles.includes("System Manager")
+		) {
+			frm.add_custom_button(__("Bulk Import Students"), function () {
+				show_bulk_import_dialog(frm);
+			});
+		}
 	},
 });
 
@@ -176,4 +186,126 @@ const set_default_legends = (frm) => {
 	});
 	frm.refresh_field("timetable_legends");
 	frm.save();
+};
+
+const show_bulk_import_dialog = (frm) => {
+	let d = new frappe.ui.Dialog({
+		title: __("Bulk Import Students"),
+		fields: [
+			{
+				label: __("Upload CSV/Excel File"),
+				fieldname: "file",
+				fieldtype: "Attach",
+				reqd: 1,
+				description: __(
+					"Upload a CSV or Excel (.xlsx) file with columns: first_name, last_name, email, phone, batch_id, enrolled_time, expiry_time"
+				),
+			},
+			{
+				label: __("Send Welcome Email"),
+				fieldname: "send_welcome_email",
+				fieldtype: "Check",
+				default: 1,
+				description: __(
+					"Send login credentials to newly created users via email"
+				),
+			},
+			{
+				label: __("Duplicate Handling"),
+				fieldname: "duplicate_action",
+				fieldtype: "Select",
+				options: "skip\nenroll_only",
+				default: "skip",
+				description: __(
+					"'skip' = skip existing users, 'enroll_only' = enroll existing users without recreating"
+				),
+			},
+			{
+				fieldtype: "HTML",
+				fieldname: "template_link",
+				options:
+					'<a href="#" class="download-template-link">' +
+					__("Download CSV Template") +
+					"</a>",
+			},
+		],
+		primary_action_label: __("Import"),
+		primary_action(values) {
+			d.hide();
+			frappe.call({
+				method: "lms.lms.api.bulk_import_users_with_enrollment",
+				args: {
+					file_url: values.file,
+					send_welcome_email: values.send_welcome_email,
+					duplicate_action: values.duplicate_action,
+				},
+				freeze: true,
+				freeze_message: __("Importing users and creating enrollments..."),
+				callback: function (r) {
+					if (r.message && r.message.success) {
+						show_import_results(r.message);
+						frm.reload_doc();
+					}
+				},
+				error: function () {
+					frappe.msgprint(
+						__("Import failed. Please check the file format and try again.")
+					);
+				},
+			});
+		},
+	});
+
+	// Bind download template link
+	d.$wrapper.find(".download-template-link").on("click", function (e) {
+		e.preventDefault();
+		window.open(
+			"/api/method/lms.lms.api.download_bulk_import_template",
+			"_blank"
+		);
+	});
+
+	d.show();
+};
+
+const show_import_results = (result) => {
+	let summary = result.summary;
+	let details = result.details;
+
+	let msg = `
+		<h5>${__("Import Summary")}</h5>
+		<table class="table table-bordered">
+			<tr><td><b>${__("Total Rows")}</b></td><td>${summary.total_rows}</td></tr>
+			<tr><td><b>${__("Users Created")}</b></td><td>${summary.users_created}</td></tr>
+			<tr><td><b>${__("Existing Users")}</b></td><td>${summary.users_existing}</td></tr>
+			<tr><td><b>${__("Users Failed")}</b></td><td>${summary.users_failed}</td></tr>
+			<tr><td><b>${__("Enrollments Created")}</b></td><td>${summary.enrollments_created}</td></tr>
+			<tr><td><b>${__("Enrollments Failed")}</b></td><td>${summary.enrollments_failed}</td></tr>
+		</table>
+		<p>${__("Import Log ID")}: <b>${result.import_log_id}</b></p>
+	`;
+
+	if (details.failed && details.failed.length > 0) {
+		msg += `<h5>${__("Failed Rows")}</h5><ul>`;
+		details.failed.forEach((f) => {
+			msg += `<li>${f.email || __("Unknown")} (Row ${f.row}): ${f.reason}</li>`;
+		});
+		msg += "</ul>";
+	}
+
+	if (details.created && details.created.length > 0) {
+		msg += `<h5>${__("Created Users & Passwords")}</h5>`;
+		msg += `<table class="table table-bordered table-sm">
+			<thead><tr><th>${__("Email")}</th><th>${__("Batch")}</th><th>${__("Password")}</th></tr></thead><tbody>`;
+		details.created.forEach((c) => {
+			msg += `<tr><td>${c.email}</td><td>${c.batch}</td><td>${c.password}</td></tr>`;
+		});
+		msg += "</tbody></table>";
+	}
+
+	frappe.msgprint({
+		title: __("Bulk Import Results"),
+		indicator: summary.users_failed > 0 ? "orange" : "green",
+		message: msg,
+	});
 };

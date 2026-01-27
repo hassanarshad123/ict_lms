@@ -6157,3 +6157,283 @@ def post_reply(comment, content):
 			"created_on": str(reply.creation)
 		}
 	}
+
+
+@frappe.whitelist()
+def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplicate_action="skip"):
+	"""
+	Bulk import users from a CSV/Excel file and enroll them into batches with time limits.
+
+	Each row in the file specifies: first_name, last_name, email, phone, batch_id,
+	enrolled_time, expiry_time. Passwords are auto-generated as last_name[:2].lower() + batch_suffix.
+
+	Args:
+		file_url (str): URL of uploaded CSV/Excel file from Frappe File Manager
+		send_welcome_email (bool): Whether to send credentials via email (default: True)
+		duplicate_action (str): How to handle existing users - "skip" or "enroll_only" (default: "skip")
+
+	Returns:
+		dict: Import summary with counts and per-row details
+	"""
+	from frappe.utils import escape_html
+	from frappe.utils.password import update_password
+
+	from lms.lms.bulk_import.file_parser import parse_import_file
+
+	# Permission check
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "System Manager"]):
+		frappe.throw(_("You do not have permission to perform bulk imports."))
+
+	if not file_url:
+		frappe.throw(_("file_url is required"))
+
+	# Normalize boolean
+	if isinstance(send_welcome_email, str):
+		send_welcome_email = send_welcome_email.lower() in ("true", "1", "yes")
+
+	if duplicate_action not in ("skip", "enroll_only"):
+		frappe.throw(_("duplicate_action must be 'skip' or 'enroll_only'"))
+
+	# Create import log
+	import_log = frappe.new_doc("LMS Bulk Import Log")
+	import_log.file_url = file_url
+	import_log.status = "Processing"
+	import_log.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	# Parse and validate file
+	try:
+		valid_rows, parse_errors = parse_import_file(file_url)
+	except Exception as e:
+		import_log.status = "Failed"
+		import_log.error_log = str(e)
+		import_log.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.throw(str(e))
+
+	results = {
+		"created": [],
+		"existing_enrolled": [],
+		"failed": []
+	}
+	summary = {
+		"total_rows": len(valid_rows) + len(parse_errors),
+		"users_created": 0,
+		"users_existing": 0,
+		"users_failed": 0,
+		"enrollments_created": 0,
+		"enrollments_failed": 0,
+	}
+
+	# Add parse errors to failed results
+	for error in parse_errors:
+		results["failed"].append({"email": "", "row": 0, "reason": error})
+		summary["users_failed"] += 1
+
+	for idx, row in enumerate(valid_rows):
+		row_num = idx + 1
+		email = row["email"]
+		first_name = row["first_name"]
+		last_name = row["last_name"]
+		phone = row.get("phone", "")
+		batch_id = row["batch_id"]
+		enrolled_time = row["enrolled_time"]
+		expiry_time = row["expiry_time"]
+		password = row["password"]
+
+		try:
+			user_exists = frappe.db.exists("User", email)
+
+			if user_exists:
+				if duplicate_action == "skip":
+					# Check if already enrolled in this batch
+					existing_enrollment = frappe.db.exists(
+						"LMS Batch Enrollment", {"batch": batch_id, "member": email}
+					)
+					if existing_enrollment:
+						results["existing_enrolled"].append({
+							"email": email,
+							"batch": batch_id,
+							"reason": "User already enrolled in this batch"
+						})
+						summary["users_existing"] += 1
+						continue
+
+					# Skip user creation but proceed to enrollment
+					summary["users_existing"] += 1
+
+				elif duplicate_action == "enroll_only":
+					summary["users_existing"] += 1
+				# Fall through to enrollment
+			else:
+				# Create new user following api_sign_up pattern
+				full_name = f"{first_name} {last_name}"
+				user = frappe.get_doc({
+					"doctype": "User",
+					"email": email,
+					"first_name": escape_html(first_name),
+					"last_name": escape_html(last_name),
+					"full_name": escape_html(full_name),
+					"phone": phone,
+					"enabled": 1,
+					"send_welcome_email": 0,  # We handle email ourselves
+					"user_type": "Website User",
+				})
+				user.flags.ignore_permissions = True
+				user.flags.ignore_password_policy = True
+				user.insert()
+
+				# Set password
+				update_password(user.name, password)
+
+				# Add roles
+				default_role = frappe.db.get_single_value("Portal Settings", "default_role")
+				if default_role:
+					user.add_roles(default_role)
+				user.add_roles("LMS Student")
+
+				summary["users_created"] += 1
+				results["created"].append({
+					"email": email,
+					"batch": batch_id,
+					"password": password,
+				})
+
+			# Create enrollment (for both new and existing users)
+			existing_enrollment = frappe.db.exists(
+				"LMS Batch Enrollment", {"batch": batch_id, "member": email}
+			)
+			if existing_enrollment:
+				if not user_exists:
+					# New user but already enrolled (shouldn't happen, but handle gracefully)
+					pass
+				else:
+					results["existing_enrolled"].append({
+						"email": email,
+						"batch": batch_id,
+						"reason": "Already enrolled"
+					})
+				continue
+
+			# Calculate duration in days
+			from datetime import datetime
+			start_date = datetime.strptime(enrolled_time, "%Y-%m-%d").date()
+			end_date = datetime.strptime(expiry_time, "%Y-%m-%d").date()
+			duration_days = (end_date - start_date).days
+
+			enrollment = frappe.new_doc("LMS Batch Enrollment")
+			enrollment.update({
+				"member": email,
+				"batch": batch_id,
+				"is_time_limited": 1,
+				"enrollment_date": nowdate(),
+				"access_start_date": enrolled_time,
+				"access_end_date": expiry_time,
+				"access_duration_days": duration_days,
+				"status": "Active",
+			})
+			enrollment.flags.ignore_permissions = True
+			enrollment.insert()
+			summary["enrollments_created"] += 1
+
+			# Send welcome email
+			if send_welcome_email and not user_exists:
+				_send_bulk_import_welcome_email(
+					email=email,
+					first_name=first_name,
+					last_name=last_name,
+					password=password,
+					batch_id=batch_id,
+					enrolled_time=enrolled_time,
+					expiry_time=expiry_time,
+				)
+
+		except Exception as e:
+			results["failed"].append({
+				"email": email,
+				"row": row_num,
+				"reason": str(e),
+			})
+			summary["users_failed"] += 1
+			summary["enrollments_failed"] += 1
+
+	# Update import log
+	import_log.reload()
+	import_log.status = "Completed"
+	import_log.total_rows = summary["total_rows"]
+	import_log.users_created = summary["users_created"]
+	import_log.users_failed = summary["users_failed"]
+	import_log.enrollments_created = summary["enrollments_created"]
+	import_log.enrollments_failed = summary["enrollments_failed"]
+	import_log.details_json = json.dumps(results, default=str)
+	if parse_errors:
+		import_log.error_log = "\n".join(parse_errors)
+	import_log.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {
+		"success": True,
+		"import_log_id": import_log.name,
+		"summary": summary,
+		"details": results,
+	}
+
+
+def _send_bulk_import_welcome_email(email, first_name, last_name, password, batch_id, enrolled_time, expiry_time):
+	"""Send welcome email with login credentials to a newly imported user."""
+	try:
+		batch_name = frappe.db.get_value("LMS Batch", batch_id, "title") or batch_id
+		site_url = frappe.utils.get_url()
+		login_url = f"{site_url}/login"
+
+		frappe.sendmail(
+			recipients=[email],
+			subject=_("Your LMS Account Credentials"),
+			template="bulk_import_credentials",
+			args={
+				"first_name": first_name,
+				"last_name": last_name,
+				"email": email,
+				"password": password,
+				"batch_name": batch_name,
+				"enrolled_time": enrolled_time,
+				"expiry_time": expiry_time,
+				"login_url": login_url,
+			},
+			now=False,
+		)
+	except Exception:
+		# Don't fail the import if email sending fails
+		frappe.log_error(
+			title=_("Bulk Import Email Error"),
+			message=f"Failed to send welcome email to {email}",
+		)
+
+
+@frappe.whitelist()
+def download_bulk_import_template():
+	"""
+	Download a sample CSV template for bulk user import.
+
+	Returns a CSV file with correct headers and an example row.
+	"""
+	import csv
+	import io
+
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "System Manager"]):
+		frappe.throw(_("You do not have permission to download the import template."))
+
+	output = io.StringIO()
+	writer = csv.writer(output)
+	writer.writerow(["first_name", "last_name", "email", "phone", "batch_id", "enrolled_time", "expiry_time"])
+	writer.writerow(["Kamil", "Ahmed", "kamil@example.com", "+923001234567", "BATCH-001", "2026-01-27", "2026-04-27"])
+	writer.writerow(["Sara", "Khan", "sara@example.com", "+923009876543", "BATCH-001", "2026-01-27", "2026-06-27"])
+
+	csv_content = output.getvalue()
+	output.close()
+
+	frappe.response["filename"] = "bulk_import_template.csv"
+	frappe.response["filecontent"] = csv_content
+	frappe.response["type"] = "download"
