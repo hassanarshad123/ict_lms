@@ -6437,3 +6437,105 @@ def download_bulk_import_template():
 	frappe.response["filename"] = "bulk_import_template.csv"
 	frappe.response["filecontent"] = csv_content
 	frappe.response["type"] = "download"
+
+
+@frappe.whitelist()
+def admin_set_user_password(email, password):
+	"""
+	Admin-only endpoint to set a user's password without requiring the old password.
+
+	Args:
+		email (str): User email
+		password (str): New password to set
+
+	Returns:
+		dict: Success message
+	"""
+	from frappe.utils.password import update_password
+
+	# Permission check - admin only
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "System Manager"]):
+		frappe.throw(_("You do not have permission to set user passwords."))
+
+	if not email:
+		frappe.throw(_("Email is required"))
+	if not password:
+		frappe.throw(_("Password is required"))
+
+	if not frappe.db.exists("User", email):
+		frappe.throw(_("User '{0}' does not exist").format(email))
+
+	update_password(email, password)
+	frappe.db.commit()
+
+	return {"message": _("Password set successfully for {0}").format(email)}
+
+
+@frappe.whitelist()
+def admin_bulk_set_passwords(users):
+	"""
+	Admin-only endpoint to set passwords for multiple users at once.
+
+	Args:
+		users (str/list): JSON array of objects with "email" and "password" keys.
+			Example: [{"email": "user@example.com", "password": "newpass123"}]
+
+	Returns:
+		dict: Summary with success/failed counts and details
+	"""
+	from frappe.utils.password import update_password
+
+	# Permission check
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "System Manager"]):
+		frappe.throw(_("You do not have permission to set user passwords."))
+
+	if not users:
+		frappe.throw(_("Users list is required"))
+
+	if isinstance(users, str):
+		try:
+			users = json.loads(users)
+		except json.JSONDecodeError:
+			frappe.throw(_("Invalid JSON format for users parameter"))
+
+	if not isinstance(users, list) or len(users) == 0:
+		frappe.throw(_("Users must be a non-empty list"))
+
+	if len(users) > 500:
+		frappe.throw(_("Maximum 500 users per request"))
+
+	results = {"success": [], "failed": []}
+
+	for idx, entry in enumerate(users):
+		email = (entry.get("email") or "").strip()
+		password = (entry.get("password") or "").strip()
+
+		if not email:
+			results["failed"].append({"row": idx + 1, "email": "", "reason": "Email is required"})
+			continue
+
+		if not password:
+			results["failed"].append({"row": idx + 1, "email": email, "reason": "Password is required"})
+			continue
+
+		if not frappe.db.exists("User", email):
+			results["failed"].append({"row": idx + 1, "email": email, "reason": "User does not exist"})
+			continue
+
+		try:
+			update_password(email, password)
+			results["success"].append({"email": email})
+		except Exception as e:
+			results["failed"].append({"row": idx + 1, "email": email, "reason": str(e)})
+
+	frappe.db.commit()
+
+	return {
+		"success": True,
+		"total": len(users),
+		"passwords_set": len(results["success"]),
+		"failed": len(results["failed"]),
+		"details": results,
+	}
