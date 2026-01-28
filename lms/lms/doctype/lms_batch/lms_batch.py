@@ -56,9 +56,9 @@ class LMSBatch(Document):
 
 		# Batch Evaluator / Teacher can manage batches they are assigned to as instructors
 		if "Batch Evaluator" in user_roles or "Teacher" in user_roles:
-			if action == "create":
+			if action in ("create", "delete"):
 				frappe.throw(
-					_("You do not have permission to create batches. Only Admin and Course Creator can create batches."),
+					_("You do not have permission to {0} batches. Only Admin and Course Creator can {0} batches.").format(action),
 					frappe.PermissionError
 				)
 			if self.is_batch_instructor(frappe.session.user):

@@ -786,6 +786,12 @@ def get_courses(filters=None, start=0):
 	if not filters:
 		filters = {}
 
+	# Server-side enforcement: Teachers can only see assigned courses
+	if not filters.get("assigned") and not filters.get("created") and not filters.get("enrolled"):
+		user_roles = frappe.get_roles(frappe.session.user)
+		if "Teacher" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
+			filters["assigned"] = 1
+
 	filters, or_filters, show_featured = update_course_filters(filters)
 	fields = get_course_fields()
 
@@ -2059,6 +2065,12 @@ def validate_program_enrollment(program):
 def get_batches(filters=None, start=0, order_by="start_date"):
 	if not filters:
 		filters = {}
+
+	# Server-side enforcement: Teachers can only see assigned batches
+	if not filters.get("assigned") and not filters.get("enrolled"):
+		user_roles = frappe.get_roles(frappe.session.user)
+		if "Teacher" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
+			filters["assigned"] = 1
 
 	if filters.get("enrolled"):
 		# Only get batches where user has active enrollment

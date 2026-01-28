@@ -183,7 +183,11 @@ watch(() => user.data, (data) => {
 
 onMounted(() => {
 	setFiltersFromQuery()
-	updateBatches()
+	// For guests, fetch immediately. For logged-in users,
+	// the watch on user.data handles the first fetch with correct filters.
+	if (!user.data) {
+		updateBatches()
+	}
 	categories.value = [
 		{
 			label: '',

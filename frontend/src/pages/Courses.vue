@@ -161,7 +161,11 @@ watch(() => user.data, (data) => {
 
 onMounted(() => {
 	setFiltersFromQuery()
-	updateCourses()
+	// For guests, fetch immediately. For logged-in users,
+	// the watch on user.data handles the first fetch with correct filters.
+	if (!user.data) {
+		updateCourses()
+	}
 	getCourseCount()
 	categories.value = [
 		{

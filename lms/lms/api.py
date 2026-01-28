@@ -2137,17 +2137,45 @@ def get_created_courses():
 			.limit(3)
 		)
 	else:
-		# Course Creator sees only courses where they are an instructor
+		is_teacher = "Teacher" in frappe.get_roles(frappe.session.user)
 		CourseInstructor = frappe.qb.DocType("Course Instructor")
-		query = (
-			frappe.qb.from_(CourseInstructor)
-			.join(Course)
-			.on(CourseInstructor.parent == Course.name)
-			.select(Course.name)
-			.where(CourseInstructor.instructor == frappe.session.user)
-			.orderby(Course.published_on, order=frappe.qb.desc)
-			.limit(3)
-		)
+
+		if is_teacher:
+			# Teachers: get courses via their assigned batches
+			assigned_batches = frappe.get_all(
+				"Course Instructor",
+				{"instructor": frappe.session.user, "parenttype": "LMS Batch"},
+				pluck="parent"
+			)
+			if assigned_batches:
+				assigned_courses = frappe.get_all(
+					"Batch Course",
+					{"parent": ["in", assigned_batches]},
+					pluck="course"
+				)
+				if assigned_courses:
+					query = (
+						frappe.qb.from_(Course)
+						.select(Course.name)
+						.where(Course.name.isin(assigned_courses))
+						.orderby(Course.published_on, order=frappe.qb.desc)
+						.limit(3)
+					)
+				else:
+					return created_courses
+			else:
+				return created_courses
+		else:
+			# Course Creator: get courses where they are a direct instructor
+			query = (
+				frappe.qb.from_(CourseInstructor)
+				.join(Course)
+				.on(CourseInstructor.parent == Course.name)
+				.select(Course.name)
+				.where(CourseInstructor.instructor == frappe.session.user)
+				.orderby(Course.published_on, order=frappe.qb.desc)
+				.limit(3)
+			)
 
 	results = query.run(as_dict=True)
 	courses = [row["name"] for row in results]
@@ -2188,6 +2216,7 @@ def get_created_batches():
 			.on(CourseInstructor.parent == Batch.name)
 			.select(Batch.name)
 			.where(CourseInstructor.instructor == frappe.session.user)
+			.where(CourseInstructor.parenttype == "LMS Batch")
 			.where(Batch.start_date >= getdate())
 			.orderby(Batch.start_date, order=frappe.qb.asc)
 			.limit(4)
@@ -2234,7 +2263,7 @@ def get_admin_live_classes():
 			.limit(4)
 		)
 	else:
-		# Course Creator sees only live classes from batches where they are an instructor
+		# Course Creator/Teacher sees only live classes from batches where they are an instructor
 		CourseInstructor = frappe.qb.DocType("Course Instructor")
 		query = (
 			frappe.qb.from_(CourseInstructor)
@@ -2253,6 +2282,7 @@ def get_admin_live_classes():
 				LMSLiveClass.owner,
 			)
 			.where(CourseInstructor.instructor == frappe.session.user)
+			.where(CourseInstructor.parenttype == "LMS Batch")
 			.where(LMSLiveClass.date >= getdate())
 			.orderby(LMSLiveClass.date, order=frappe.qb.asc)
 			.limit(4)
