@@ -5351,6 +5351,152 @@ def apply_for_job(job, resume):
 
 
 @frappe.whitelist()
+def apply_for_job_mobile(job=None):
+	"""
+	Apply for a job with CV upload via FormData (Mobile App).
+
+	This endpoint handles file upload and job application in a single request,
+	designed for React Native and mobile app integrations.
+
+	Args:
+		job: Job Opportunity name/ID (form field)
+		file: CV/Resume file (multipart file upload)
+
+	Returns:
+		dict: Application confirmation with file URL
+
+	Usage:
+		POST /api/method/lms.lms.api.apply_for_job_mobile
+		Content-Type: multipart/form-data
+		Headers: Authorization: token <api_key>:<api_secret>
+
+		Form Data:
+			job: "job-opportunity-name"
+			file: <binary file>
+
+	React Native Example:
+		const formData = new FormData();
+		formData.append('job', 'software-developer-position');
+		formData.append('file', {
+			uri: fileUri,
+			type: 'application/pdf',
+			name: 'resume.pdf'
+		});
+
+		fetch(url, {
+			method: 'POST',
+			headers: { 'Authorization': 'token key:secret' },
+			body: formData
+		});
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to continue"), frappe.AuthenticationError)
+
+	# Get job from form data if not passed as parameter
+	if not job:
+		job = frappe.form_dict.get("job")
+
+	if not job:
+		frappe.throw(_("Job is required"))
+
+	# Check for file in request
+	if "file" not in frappe.request.files:
+		frappe.throw(_("CV/Resume file is required. Please upload a file."))
+
+	uploaded_file = frappe.request.files["file"]
+
+	if not uploaded_file.filename:
+		frappe.throw(_("No file selected"))
+
+	# Validate file type (PDF, DOC, DOCX)
+	allowed_extensions = ["pdf", "doc", "docx"]
+	file_ext = uploaded_file.filename.rsplit(".", 1)[-1].lower() if "." in uploaded_file.filename else ""
+
+	if file_ext not in allowed_extensions:
+		frappe.throw(_("Invalid file type. Allowed: PDF, DOC, DOCX"))
+
+	# Validate file size (max 5MB)
+	uploaded_file.seek(0, 2)  # Seek to end
+	file_size = uploaded_file.tell()
+	uploaded_file.seek(0)  # Reset to beginning
+
+	max_size = 5 * 1024 * 1024  # 5MB
+	if file_size > max_size:
+		frappe.throw(_("File size exceeds 5MB limit"))
+
+	# Validate job exists
+	if not frappe.db.exists("Job Opportunity", job):
+		frappe.throw(_("Job not found"), frappe.DoesNotExistError)
+
+	user = frappe.session.user
+
+	# Check if already applied
+	existing = frappe.db.exists(
+		"LMS Job Application",
+		{"job": job, "user": user}
+	)
+
+	if existing:
+		frappe.throw(_("You have already applied for this job"))
+
+	# Get job details
+	job_doc = frappe.db.get_value(
+		"Job Opportunity",
+		job,
+		["job_title", "company_name", "status"],
+		as_dict=True
+	)
+
+	if job_doc.status != "Open":
+		frappe.throw(_("This job is no longer accepting applications"))
+
+	# Save file to Frappe
+	file_content = uploaded_file.read()
+	file_name = uploaded_file.filename
+
+	# Create unique filename
+	user_name = frappe.db.get_value("User", user, "full_name") or user.split("@")[0]
+	safe_user_name = "".join(c for c in user_name if c.isalnum() or c in " -_").strip().replace(" ", "_")
+	unique_filename = f"CV_{safe_user_name}_{job}_{nowdate()}.{file_ext}"
+
+	# Save file using Frappe's file handler
+	file_doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": unique_filename,
+		"content": file_content,
+		"is_private": 1,
+		"attached_to_doctype": "LMS Job Application",
+		"attached_to_field": "resume"
+	})
+	file_doc.save(ignore_permissions=True)
+
+	# Create application
+	application = frappe.new_doc("LMS Job Application")
+	application.user = user
+	application.job = job
+	application.resume = file_doc.file_url
+	application.save(ignore_permissions=True)
+
+	# Update file attachment link
+	file_doc.attached_to_name = application.name
+	file_doc.save(ignore_permissions=True)
+
+	frappe.db.commit()
+
+	return {
+		"message": _("Application submitted successfully"),
+		"application": {
+			"name": application.name,
+			"job": job,
+			"job_title": job_doc.job_title,
+			"company": job_doc.company_name,
+			"resume_url": file_doc.file_url,
+			"applied_on": str(application.creation.date()) if application.creation else nowdate()
+		}
+	}
+
+
+@frappe.whitelist()
 def get_my_applications(start=0, page_length=20):
 	"""
 	Get all job applications by current user.
