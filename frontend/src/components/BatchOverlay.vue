@@ -227,7 +227,7 @@ const canAccessBatch = computed(() => {
 })
 
 const canEditBatch = computed(() => {
-	// Admin, Course Creator (if instructor), or Teacher (if instructor) can edit
-	return isAdmin.value || (isCourseCreator.value && isInstructor.value) || (isTeacher.value && isInstructor.value)
+	// Only Admin or Course Creator who is instructor can edit
+	return isAdmin.value || (isCourseCreator.value && isInstructor.value)
 })
 </script>

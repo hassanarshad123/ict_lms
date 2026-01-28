@@ -98,14 +98,14 @@ def create_lms_student_role():
 
 
 def create_teacher_role():
-	"""Create Teacher role - can view assigned courses/batches but cannot create/delete."""
-	if frappe.db.exists("Role", "Teacher"):
-		frappe.db.set_value("Role", "Teacher", "desk_access", 0)
+	"""Create LMS Teacher role - can view assigned courses/batches but cannot create/delete."""
+	if frappe.db.exists("Role", "LMS Teacher"):
+		frappe.db.set_value("Role", "LMS Teacher", "desk_access", 0)
 	else:
 		role = frappe.new_doc("Role")
 		role.update(
 			{
-				"role_name": "Teacher",
+				"role_name": "LMS Teacher",
 				"home_page": "",
 				"desk_access": 0,
 			}
@@ -196,7 +196,7 @@ def create_batch_source():
 
 def give_lms_roles_to_admin():
 	# Admin gets Moderator role which grants full access
-	roles = ["Moderator", "Course Creator", "Teacher", "Batch Evaluator"]
+	roles = ["Moderator", "Course Creator", "LMS Teacher", "Batch Evaluator"]
 	for role in roles:
 		if not frappe.db.exists("Has Role", {"parent": "Administrator", "role": role}):
 			doc = frappe.new_doc("Has Role")

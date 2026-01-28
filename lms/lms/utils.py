@@ -378,7 +378,7 @@ def has_teacher_role(member=None):
 	"""Check if user has Teacher role."""
 	return frappe.db.get_value(
 		"Has Role",
-		{"parent": member or frappe.session.user, "role": "Teacher"},
+		{"parent": member or frappe.session.user, "role": "LMS Teacher"},
 		"name",
 	)
 
@@ -789,7 +789,7 @@ def get_courses(filters=None, start=0):
 	# Server-side enforcement: Teachers can only see assigned courses
 	if not filters.get("assigned") and not filters.get("created") and not filters.get("enrolled"):
 		user_roles = frappe.get_roles(frappe.session.user)
-		if "Teacher" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
+		if "LMS Teacher" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
 			filters["assigned"] = 1
 
 	filters, or_filters, show_featured = update_course_filters(filters)
@@ -2069,7 +2069,7 @@ def get_batches(filters=None, start=0, order_by="start_date"):
 	# Server-side enforcement: Teachers can only see assigned batches
 	if not filters.get("assigned") and not filters.get("enrolled"):
 		user_roles = frappe.get_roles(frappe.session.user)
-		if "Teacher" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
+		if "LMS Teacher" in user_roles and "Moderator" not in user_roles and "Course Creator" not in user_roles:
 			filters["assigned"] = 1
 
 	if filters.get("enrolled"):

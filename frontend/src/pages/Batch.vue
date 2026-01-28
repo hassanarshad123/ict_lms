@@ -389,11 +389,11 @@ const canMakeAnnouncement = () => {
 
 	if (!batch.data?.students?.length) return false
 
-	return user.data?.is_admin || user.data?.is_course_creator || (user.data?.is_teacher && isInstructor.value)
+	return user.data?.is_admin || user.data?.is_course_creator
 }
 
 const isAdmin = computed(() => {
-	return user.data?.is_admin || user.data?.is_course_creator || (user.data?.is_teacher && isInstructor.value)
+	return user.data?.is_admin || user.data?.is_course_creator
 })
 
 const isInstructor = computed(() => {

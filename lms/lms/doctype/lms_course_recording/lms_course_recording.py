@@ -75,7 +75,7 @@ class LMSCourseRecording(Document):
 				return
 
 		# Teacher cannot create/edit/delete recordings
-		if "Teacher" in user_roles and action != "read":
+		if "LMS Teacher" in user_roles and action != "read":
 			frappe.throw(
 				_("Teachers do not have permission to {0} recordings").format(action),
 				frappe.PermissionError,
@@ -124,7 +124,7 @@ def has_recording_access(recording_name, user=None):
 		return True
 
 	# Teacher assigned to a batch with this course
-	if "Teacher" in user_roles:
+	if "LMS Teacher" in user_roles:
 		# Check if user is instructor on any batch that includes this course
 		batches_with_course = frappe.get_all(
 			"Batch Course", filters={"course": recording.course}, pluck="parent"

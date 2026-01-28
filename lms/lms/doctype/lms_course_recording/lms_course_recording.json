@@ -251,7 +251,7 @@
    "email": 1,
    "print": 1,
    "read": 1,
-   "role": "Teacher",
+   "role": "LMS Teacher",
    "share": 1
   },
   {

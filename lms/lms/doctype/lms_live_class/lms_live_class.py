@@ -14,6 +14,36 @@ from lms.lms.doctype.lms_batch.lms_batch import authenticate
 
 
 class LMSLiveClass(Document):
+	def before_insert(self):
+		self.enforce_role_permissions()
+
+	def enforce_role_permissions(self):
+		"""Only Admin and Course Creator can create live classes. Teachers can only start them."""
+		if frappe.session.user == "Administrator":
+			return
+
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		# Admin (Moderator) can create
+		if "Moderator" in user_roles:
+			return
+
+		# Course Creator can create
+		if "Course Creator" in user_roles:
+			return
+
+		# Teachers cannot create live classes
+		if "LMS Teacher" in user_roles:
+			frappe.throw(
+				_("Teachers cannot create live classes. Please contact a Course Creator or Admin."),
+				frappe.PermissionError,
+			)
+
+		frappe.throw(
+			_("You do not have permission to create live classes."),
+			frappe.PermissionError,
+		)
+
 	def after_insert(self):
 		calendar = frappe.db.get_value("Google Calendar", {"user": frappe.session.user, "enable": 1}, "name")
 
