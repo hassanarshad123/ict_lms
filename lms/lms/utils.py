@@ -318,11 +318,32 @@ def get_course_progress(course, member=None):
 	return flt(((completed_lessons / lesson_count) * 100), precision)
 
 
-def is_instructor(course):
+def is_instructor(course, member=None):
+	if not member:
+		member = frappe.session.user
+
+	# Check if user is a direct course instructor
 	instructors = get_instructors("LMS Course", course)
 	for instructor in instructors:
-		if instructor.name == frappe.session.user:
+		if instructor.name == member:
 			return True
+
+	# Check if user is a batch instructor for a batch containing this course
+	batches_with_course = frappe.get_all(
+		"Batch Course",
+		filters={"course": course},
+		pluck="parent"
+	)
+	if batches_with_course and frappe.db.exists(
+		"Course Instructor",
+		{
+			"parenttype": "LMS Batch",
+			"parent": ["in", batches_with_course],
+			"instructor": member,
+		}
+	):
+		return True
+
 	return False
 
 

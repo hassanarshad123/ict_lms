@@ -386,8 +386,15 @@ def create_lesson_for_recording(course, title, vimeo_embed_url):
         chapter_name = chapter_doc.name
         frappe.logger().info(f"Created Recordings chapter: {chapter_name}")
 
-        # Add chapter to course's chapters table (Chapter Reference)
-        # This is required for the chapter to appear in course outline
+    # Always ensure the chapter is in the course's chapters table (Chapter Reference)
+    # This is required for the chapter to appear in course outline
+    # Check if already linked to prevent duplicates
+    chapter_already_linked = frappe.db.exists(
+        "Chapter Reference",
+        {"parent": course, "chapter": chapter_name}
+    )
+
+    if not chapter_already_linked:
         course_doc = frappe.get_doc("LMS Course", course)
         course_doc.append("chapters", {"chapter": chapter_name})
         course_doc.save(ignore_permissions=True)
