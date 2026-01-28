@@ -139,12 +139,25 @@ const currentCategory = ref(null)
 const title = ref('')
 const certification = ref(false)
 const filters = ref({})
-// Students default to 'Enrolled', Teachers to 'Assigned', others to 'Live'
 const is_student = computed(() => user.data?.is_student && !user.data?.is_admin && !user.data?.is_course_creator && !user.data?.is_teacher)
 const is_teacher = computed(() => user.data?.is_teacher && !user.data?.is_admin && !user.data?.is_course_creator)
-const currentTab = ref(is_student.value ? 'Enrolled' : is_teacher.value ? 'Assigned' : 'Live')
+// Default tab - will be corrected once user data loads
+const currentTab = ref('Live')
 const { brand } = sessionStore()
 const courseCount = ref(0)
+
+// Set correct default tab once user data is available
+watch(() => user.data, (data) => {
+	if (!data) return
+	if (is_student.value) {
+		currentTab.value = 'Enrolled'
+	} else if (is_teacher.value) {
+		currentTab.value = 'Assigned'
+	} else {
+		currentTab.value = 'Live'
+	}
+	updateCourses()
+}, { immediate: true })
 
 onMounted(() => {
 	setFiltersFromQuery()

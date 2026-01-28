@@ -162,11 +162,24 @@ const is_admin = computed(() => user.data?.is_admin)
 const is_teacher = computed(() => user.data?.is_teacher && !user.data?.is_admin && !user.data?.is_course_creator)
 // Check if user has full admin access (Admin, Course Creator) - NOT teacher
 const hasAdminAccess = computed(() => is_admin.value || is_course_creator.value)
-// Students default to 'Enrolled', Teachers to 'Assigned', Admins to 'All'
-const currentTab = ref(is_student.value ? 'Enrolled' : is_teacher.value ? 'Assigned' : 'All')
+// Default tab - will be corrected once user data loads
+const currentTab = ref('All')
 const orderBy = ref('start_date')
 const readOnlyMode = window.read_only_mode
 const router = useRouter()
+
+// Set correct default tab once user data is available
+watch(() => user.data, (data) => {
+	if (!data) return
+	if (is_student.value) {
+		currentTab.value = 'Enrolled'
+	} else if (is_teacher.value) {
+		currentTab.value = 'Assigned'
+	} else {
+		currentTab.value = 'All'
+	}
+	updateBatches()
+}, { immediate: true })
 
 onMounted(() => {
 	setFiltersFromQuery()
@@ -349,7 +362,7 @@ const batchTabs = computed(() => {
 			{ label: __('Unpublished') },
 		]
 	}
-	if (user.data?.is_teacher) {
+	if (is_teacher.value) {
 		return [
 			{ label: __('Assigned') },
 			{ label: __('Upcoming') },
