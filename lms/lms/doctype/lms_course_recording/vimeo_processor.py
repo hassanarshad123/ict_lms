@@ -272,7 +272,6 @@ def create_recording(video_id, video_data, live_class):
     duration = video_data.get("duration", 0)  # seconds
     embed_data = video_data.get("embed", {})
     pictures = video_data.get("pictures", {})
-    transcode = video_data.get("transcode", {})
 
     # Get embed URL
     embed_html = embed_data.get("html", "")
@@ -281,14 +280,9 @@ def create_recording(video_id, video_data, live_class):
     # Get thumbnail
     thumbnail_url = get_best_thumbnail(pictures)
 
-    # Determine status based on transcode status
-    transcode_status = transcode.get("status", "complete")
-    if transcode_status == "complete":
-        status = "Uploaded"
-    elif transcode_status in ["in_progress", "processing"]:
-        status = "Processing"
-    else:
-        status = "Pending"
+    # Set status to "Uploaded" - the video is on Vimeo and will be playable
+    # The hourly check_processing_recordings job can verify if still processing
+    status = "Uploaded"
 
     # Create recording
     recording = frappe.new_doc("LMS Course Recording")
@@ -321,7 +315,90 @@ def create_recording(video_id, video_data, live_class):
     recording.insert(ignore_permissions=True)
     frappe.db.commit()
 
+    # Create lesson for this recording
+    if live_class.course:
+        try:
+            lesson_name = create_lesson_for_recording(
+                course=live_class.course,
+                title=live_class.title,
+                vimeo_embed_url=embed_url
+            )
+            if lesson_name:
+                frappe.logger().info(f"Created lesson {lesson_name} for recording {recording.name}")
+        except Exception as e:
+            # Log error but don't fail the recording creation
+            frappe.log_error(
+                f"Failed to create lesson for recording {recording.name}: {str(e)}",
+                "Recording Lesson Error"
+            )
+
     return recording.name
+
+
+def create_lesson_for_recording(course, title, vimeo_embed_url):
+    """
+    Create a lesson for the recording in a "Recordings" chapter.
+
+    1. Find or create "Recordings" chapter in the course
+    2. Create lesson with Vimeo embed
+    3. Add lesson to chapter's lessons table
+
+    Args:
+        course: The course name to add the lesson to
+        title: The live class title (used to name the lesson)
+        vimeo_embed_url: The Vimeo player embed URL
+
+    Returns:
+        The lesson name if created, None otherwise
+    """
+    if not course or not vimeo_embed_url:
+        return None
+
+    RECORDINGS_CHAPTER_TITLE = "Recordings"
+    lesson_title = f"{title} Recording"
+
+    # Check if lesson already exists (avoid duplicates)
+    existing_lesson = frappe.db.get_value(
+        "Course Lesson",
+        {"title": lesson_title, "course": course},
+        "name"
+    )
+    if existing_lesson:
+        frappe.logger().info(f"Lesson already exists: {existing_lesson}")
+        return existing_lesson
+
+    # Find existing "Recordings" chapter for this course
+    chapter_name = frappe.db.get_value(
+        "Course Chapter",
+        {"course": course, "title": RECORDINGS_CHAPTER_TITLE},
+        "name"
+    )
+
+    # Create chapter if not exists
+    if not chapter_name:
+        chapter_doc = frappe.new_doc("Course Chapter")
+        chapter_doc.title = RECORDINGS_CHAPTER_TITLE
+        chapter_doc.course = course
+        chapter_doc.insert(ignore_permissions=True)
+        chapter_name = chapter_doc.name
+        frappe.logger().info(f"Created Recordings chapter: {chapter_name}")
+
+    # Create the lesson with Vimeo embed
+    lesson = frappe.new_doc("Course Lesson")
+    lesson.title = lesson_title
+    lesson.chapter = chapter_name
+    # Use the Embed macro to embed the Vimeo video
+    lesson.body = f'{{{{ Embed("video|||{vimeo_embed_url}") }}}}'
+    lesson.insert(ignore_permissions=True)
+
+    # Add lesson to chapter's lessons table
+    chapter_doc = frappe.get_doc("Course Chapter", chapter_name)
+    chapter_doc.append("lessons", {"lesson": lesson.name})
+    chapter_doc.save(ignore_permissions=True)
+
+    frappe.db.commit()
+
+    return lesson.name
 
 
 def create_orphan_recording(video_id, video_data):
@@ -336,7 +413,6 @@ def create_orphan_recording(video_id, video_data):
     duration = video_data.get("duration", 0)
     embed_data = video_data.get("embed", {})
     pictures = video_data.get("pictures", {})
-    transcode = video_data.get("transcode", {})
     created_time = video_data.get("created_time")
 
     # Get embed URL
@@ -346,9 +422,8 @@ def create_orphan_recording(video_id, video_data):
     # Get thumbnail
     thumbnail_url = get_best_thumbnail(pictures)
 
-    # Determine status
-    transcode_status = transcode.get("status", "complete")
-    status = "Uploaded" if transcode_status == "complete" else "Processing"
+    # Set status to "Uploaded" - the video is on Vimeo and will be playable
+    status = "Uploaded"
 
     # We need a course - try to get a default one or use the first available
     # First, check if there's a default course in settings
