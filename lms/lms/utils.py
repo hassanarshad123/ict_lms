@@ -849,6 +849,22 @@ def update_course_filters(filters):
 		filters.update({"name": ["in", created_courses]})
 		del filters["created"]
 
+	if filters.get("assigned"):
+		# Get batches where user is an instructor
+		assigned_batches = frappe.get_all(
+			"Course Instructor",
+			{"instructor": frappe.session.user, "parenttype": "LMS Batch"},
+			pluck="parent"
+		)
+		# Get courses linked to those batches
+		assigned_courses = frappe.get_all(
+			"Batch Course",
+			{"parent": ["in", assigned_batches]},
+			pluck="course"
+		) if assigned_batches else []
+		filters.update({"name": ["in", assigned_courses]})
+		del filters["assigned"]
+
 	if filters.get("live"):
 		filters.update({"featured": 0})
 		show_featured = True
@@ -2053,6 +2069,16 @@ def get_batches(filters=None, start=0, order_by="start_date"):
 		)
 		filters.update({"name": ["in", enrolled_batches]})
 		del filters["enrolled"]
+
+	if filters.get("assigned"):
+		# Only get batches where user is an instructor
+		assigned_batches = frappe.get_all(
+			"Course Instructor",
+			{"instructor": frappe.session.user, "parenttype": "LMS Batch"},
+			pluck="parent"
+		)
+		filters.update({"name": ["in", assigned_batches]})
+		del filters["assigned"]
 
 	batches = frappe.get_all(
 		"LMS Batch",

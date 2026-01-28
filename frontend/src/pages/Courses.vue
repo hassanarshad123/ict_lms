@@ -139,9 +139,10 @@ const currentCategory = ref(null)
 const title = ref('')
 const certification = ref(false)
 const filters = ref({})
-// Students default to 'Enrolled', others default to 'Live'
+// Students default to 'Enrolled', Teachers to 'Assigned', others to 'Live'
 const is_student = computed(() => user.data?.is_student && !user.data?.is_admin && !user.data?.is_course_creator && !user.data?.is_teacher)
-const currentTab = ref(is_student.value ? 'Enrolled' : 'Live')
+const is_teacher = computed(() => user.data?.is_teacher && !user.data?.is_admin && !user.data?.is_course_creator)
+const currentTab = ref(is_student.value ? 'Enrolled' : is_teacher.value ? 'Assigned' : 'Live')
 const { brand } = sessionStore()
 const courseCount = ref(0)
 
@@ -262,36 +263,42 @@ const updateTabFilter = () => {
 	delete filters.value['created']
 	delete filters.value['published_on']
 	delete filters.value['upcoming']
+	delete filters.value['enrolled']
+	delete filters.value['published']
+	delete filters.value['assigned']
 
-	if (currentTab.value == 'Enrolled' && user.data?.is_student) {
+	if (is_teacher.value) {
+		// Teachers only see courses assigned to their batches
+		filters.value['assigned'] = 1
+	} else if (is_student.value) {
+		// Students only see enrolled courses
 		filters.value['enrolled'] = 1
-		delete filters.value['published']
-	} else {
-		delete filters.value['published']
-		delete filters.value['enrolled']
-
-		if (currentTab.value == 'Live') {
-			filters.value['published'] = 1
-			filters.value['upcoming'] = 0
-			filters.value['live'] = 1
-		} else if (currentTab.value == 'Upcoming') {
-			filters.value['upcoming'] = 1
-		} else if (currentTab.value == 'New') {
-			filters.value['published'] = 1
-			filters.value['published_on'] = [
-				'>=',
-				dayjs().add(-3, 'month').format('YYYY-MM-DD'),
-			]
-		} else if (currentTab.value == 'Created') {
-			filters.value['created'] = 1
-		} else if (currentTab.value == 'Unpublished') {
-			filters.value['published'] = 0
-		}
+	} else if (currentTab.value == 'Live') {
+		filters.value['published'] = 1
+		filters.value['upcoming'] = 0
+		filters.value['live'] = 1
+	} else if (currentTab.value == 'Upcoming') {
+		filters.value['upcoming'] = 1
+	} else if (currentTab.value == 'New') {
+		filters.value['published'] = 1
+		filters.value['published_on'] = [
+			'>=',
+			dayjs().add(-3, 'month').format('YYYY-MM-DD'),
+		]
+	} else if (currentTab.value == 'Created') {
+		filters.value['created'] = 1
+	} else if (currentTab.value == 'Unpublished') {
+		filters.value['published'] = 0
 	}
 }
 
 const updateStudentFilter = () => {
-	if (!user.data || (user.data?.is_student && currentTab.value != 'Enrolled')) {
+	// Teachers and students have their own filters already applied
+	if (is_teacher.value || is_student.value) {
+		return
+	}
+	// Guests see only published courses
+	if (!user.data) {
 		filters.value['published'] = 1
 	}
 }
@@ -338,28 +345,26 @@ watch(currentTab, () => {
 })
 
 const courseTabs = computed(() => {
-	let tabs = [
-		{
-			label: __('Live'),
-		},
-		{
-			label: __('New'),
-		},
-		{
-			label: __('Upcoming'),
-		},
-	]
-	if (
-		user.data?.is_admin ||
-		user.data?.is_course_creator ||
-		user.data?.is_teacher
-	) {
-		tabs.push({ label: __('Created') })
-		tabs.push({ label: __('Unpublished') })
-	} else if (user.data) {
-		tabs.push({ label: __('Enrolled') })
+	if (user.data?.is_admin || user.data?.is_course_creator) {
+		return [
+			{ label: __('Live') },
+			{ label: __('New') },
+			{ label: __('Upcoming') },
+			{ label: __('Created') },
+			{ label: __('Unpublished') },
+		]
 	}
-	return tabs
+	if (is_teacher.value) {
+		return [{ label: __('Assigned') }]
+	}
+	if (user.data) {
+		return [{ label: __('Enrolled') }]
+	}
+	return [
+		{ label: __('Live') },
+		{ label: __('New') },
+		{ label: __('Upcoming') },
+	]
 })
 
 const breadcrumbs = computed(() => [

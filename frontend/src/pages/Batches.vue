@@ -156,14 +156,14 @@ const currentCategory = ref(null)
 const title = ref('')
 const certification = ref(false)
 const filters = ref({})
-const is_student = computed(() => user.data?.is_student)
+const is_student = computed(() => user.data?.is_student && !user.data?.is_admin && !user.data?.is_course_creator && !user.data?.is_teacher)
 const is_course_creator = computed(() => user.data?.is_course_creator)
 const is_admin = computed(() => user.data?.is_admin)
-const is_teacher = computed(() => user.data?.is_teacher)
-// Check if user has admin-level access (Admin, Course Creator, or Teacher)
-const hasAdminAccess = computed(() => is_admin.value || is_course_creator.value || is_teacher.value)
-// Students and Course Creators default to 'All', others to 'Upcoming'
-const currentTab = ref(is_student.value || is_course_creator.value ? 'All' : 'Upcoming')
+const is_teacher = computed(() => user.data?.is_teacher && !user.data?.is_admin && !user.data?.is_course_creator)
+// Check if user has full admin access (Admin, Course Creator) - NOT teacher
+const hasAdminAccess = computed(() => is_admin.value || is_course_creator.value)
+// Students default to 'Enrolled', Teachers to 'Assigned', Admins to 'All'
+const currentTab = ref(is_student.value ? 'Enrolled' : is_teacher.value ? 'Assigned' : 'All')
 const orderBy = ref('start_date')
 const readOnlyMode = window.read_only_mode
 const router = useRouter()
@@ -250,11 +250,15 @@ const updateTabFilter = () => {
 	if (!user.data) {
 		return
 	}
-	// Users with admin access (Admin, Course Creator, Teacher) see all batches with tab filters
+
+	// Clear previous tab filters
+	delete filters.value['start_date']
+	delete filters.value['published']
+	delete filters.value['enrolled']
+	delete filters.value['assigned']
+
 	if (hasAdminAccess.value) {
-		delete filters.value['start_date']
-		delete filters.value['published']
-		delete filters.value['enrolled']
+		// Admin / Course Creator see all batches with tab filters
 		orderBy.value = 'start_date desc'
 		if (currentTab.value == 'Upcoming') {
 			filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
@@ -265,27 +269,35 @@ const updateTabFilter = () => {
 		} else if (currentTab.value == 'Unpublished') {
 			filters.value['published'] = 0
 		}
-		// 'All' tab shows all batches without additional filters
-	} else if (currentTab.value == 'Enrolled' && is_student.value) {
-		filters.value['enrolled'] = 1
-		delete filters.value['start_date']
-		delete filters.value['published']
+	} else if (is_teacher.value) {
+		// Teacher sees only batches assigned to them as instructor
+		filters.value['assigned'] = 1
 		orderBy.value = 'start_date desc'
+		if (currentTab.value == 'Upcoming') {
+			filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
+			filters.value['published'] = 1
+			orderBy.value = 'start_date'
+		} else if (currentTab.value == 'Archived') {
+			filters.value['start_date'] = ['<=', dayjs().format('YYYY-MM-DD')]
+		}
 	} else if (is_student.value) {
-		delete filters.value['enrolled']
+		// Students only see enrolled batches
+		filters.value['enrolled'] = 1
+		orderBy.value = 'start_date desc'
 	}
 }
 
 const updateStudentFilter = () => {
-	// Skip for users with admin access - they already have proper filters applied
-	if (hasAdminAccess.value) {
+	// Skip for users with admin access or teachers - they already have proper filters applied
+	if (hasAdminAccess.value || is_teacher.value) {
 		return
 	}
-	// Apply student filters for non-admin students not on Enrolled tab, or guests
-	if (!user.data || (is_student.value && currentTab.value != 'Enrolled')) {
+	// Guests see only upcoming published batches
+	if (!user.data) {
 		filters.value['start_date'] = ['>=', dayjs().format('YYYY-MM-DD')]
 		filters.value['published'] = 1
 	}
+	// Students are always on 'Enrolled' tab - no additional filter needed
 }
 
 const setQueryParams = () => {
@@ -329,24 +341,25 @@ watch(currentTab, () => {
 })
 
 const batchTabs = computed(() => {
-	let tabs = [
-		{
-			label: __('All'),
-		},
-	]
-
-	if (
-		user.data?.is_admin ||
-		user.data?.is_course_creator ||
-		user.data?.is_teacher
-	) {
-		tabs.push({ label: __('Upcoming') })
-		tabs.push({ label: __('Archived') })
-		tabs.push({ label: __('Unpublished') })
-	} else if (user.data) {
-		tabs.push({ label: __('Enrolled') })
+	if (user.data?.is_admin || user.data?.is_course_creator) {
+		return [
+			{ label: __('All') },
+			{ label: __('Upcoming') },
+			{ label: __('Archived') },
+			{ label: __('Unpublished') },
+		]
 	}
-	return tabs
+	if (user.data?.is_teacher) {
+		return [
+			{ label: __('Assigned') },
+			{ label: __('Upcoming') },
+			{ label: __('Archived') },
+		]
+	}
+	if (user.data) {
+		return [{ label: __('Enrolled') }]
+	}
+	return [{ label: __('All') }]
 })
 
 const breadcrumbs = computed(() => [

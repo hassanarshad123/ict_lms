@@ -38,8 +38,8 @@ class LMSBatch(Document):
 	def enforce_role_permissions(self, action):
 		"""
 		Enforce role-based permissions for batch operations.
-		Only Admin (Moderator) and Course Creator can create/edit/delete batches.
-		Teachers and Students cannot perform these actions.
+		Moderator and Course Creator can manage all batches.
+		Teacher and Batch Evaluator can manage batches they are assigned to as instructors.
 		"""
 		if frappe.session.user == "Administrator":
 			return
@@ -54,10 +54,28 @@ class LMSBatch(Document):
 		if "Course Creator" in user_roles:
 			return
 
-		# Teachers and Students cannot create/edit/delete batches
+		# Batch Evaluator / Teacher can manage batches they are assigned to as instructors
+		if "Batch Evaluator" in user_roles or "Teacher" in user_roles:
+			if action == "create":
+				frappe.throw(
+					_("You do not have permission to create batches. Only Admin and Course Creator can create batches."),
+					frappe.PermissionError
+				)
+			if self.is_batch_instructor(frappe.session.user):
+				return
+
 		frappe.throw(
-			_("You do not have permission to {0} batches. Only Admin and Course Creator can perform this action.").format(action),
+			_("You do not have permission to {0} this batch. You must be an Admin, Course Creator, or an instructor assigned to this batch.").format(action),
 			frappe.PermissionError
+		)
+
+	def is_batch_instructor(self, user):
+		"""Check if user is listed as an instructor on this batch."""
+		if not self.name:
+			return False
+		return frappe.db.exists(
+			"Course Instructor",
+			{"parent": self.name, "parenttype": "LMS Batch", "instructor": user}
 		)
 
 	def validate(self):
