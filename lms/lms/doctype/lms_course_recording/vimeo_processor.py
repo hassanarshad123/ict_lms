@@ -12,7 +12,9 @@ This module handles:
 5. Applying privacy settings to the video
 """
 
+import json
 import re
+import time as time_module
 import frappe
 import requests
 from frappe import _
@@ -340,8 +342,9 @@ def create_lesson_for_recording(course, title, vimeo_embed_url):
     Create a lesson for the recording in a "Recordings" chapter.
 
     1. Find or create "Recordings" chapter in the course
-    2. Create lesson with Vimeo embed
-    3. Add lesson to chapter's lessons table
+    2. Add chapter to course's chapters table (if new)
+    3. Create lesson with Vimeo embed
+    4. Add lesson to chapter's lessons table
 
     Args:
         course: The course name to add the lesson to
@@ -383,15 +386,37 @@ def create_lesson_for_recording(course, title, vimeo_embed_url):
         chapter_name = chapter_doc.name
         frappe.logger().info(f"Created Recordings chapter: {chapter_name}")
 
-    # Create the lesson with Vimeo embed
+        # Add chapter to course's chapters table (Chapter Reference)
+        # This is required for the chapter to appear in course outline
+        course_doc = frappe.get_doc("LMS Course", course)
+        course_doc.append("chapters", {"chapter": chapter_name})
+        course_doc.save(ignore_permissions=True)
+        frappe.logger().info(f"Added chapter {chapter_name} to course {course}")
+
+    # Create the lesson with Vimeo embed using EditorJS JSON format
+    # This is the same format the frontend uses when saving lessons
+    editor_content = {
+        "time": int(time_module.time() * 1000),
+        "blocks": [
+            {
+                "type": "embed",
+                "data": {
+                    "service": "vimeo",
+                    "embed": vimeo_embed_url
+                }
+            }
+        ],
+        "version": "2.28.2"
+    }
+
     lesson = frappe.new_doc("Course Lesson")
     lesson.title = lesson_title
     lesson.chapter = chapter_name
-    # Use the Embed macro to embed the Vimeo video
-    lesson.body = f'{{{{ Embed("video|||{vimeo_embed_url}") }}}}'
+    # Use content field with EditorJS JSON format (same as frontend)
+    lesson.content = json.dumps(editor_content)
     lesson.insert(ignore_permissions=True)
 
-    # Add lesson to chapter's lessons table
+    # Add lesson to chapter's lessons table (Lesson Reference)
     chapter_doc = frappe.get_doc("Course Chapter", chapter_name)
     chapter_doc.append("lessons", {"lesson": lesson.name})
     chapter_doc.save(ignore_permissions=True)
