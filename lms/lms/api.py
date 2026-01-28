@@ -31,7 +31,7 @@ from frappe.utils import (
 from frappe.utils.response import Response
 
 from lms.lms.doctype.course_lesson.course_lesson import save_progress
-from lms.lms.utils import get_average_rating, get_batch_details, get_course_details, get_lesson_count
+from lms.lms.utils import get_average_rating, get_batch_details, get_course_details, get_lesson_count, has_moderator_role, is_instructor
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1338,11 +1338,46 @@ def delete_scorm_package(scorm_package_path):
 
 
 @frappe.whitelist()
-def mark_lesson_progress(course, chapter_number, lesson_number):
-	chapter_name = frappe.get_value("Chapter Reference", {"parent": course, "idx": chapter_number}, "chapter")
-	lesson_name = frappe.get_value(
-		"Lesson Reference", {"parent": chapter_name, "idx": lesson_number}, "lesson"
-	)
+def mark_lesson_progress(course=None, chapter_number=None, lesson_number=None, lesson=None):
+	"""
+	Mark a lesson as completed.
+
+	Accepts either:
+	  - lesson: Lesson name (e.g. "lesson-introduction-to-python")
+	  - OR course + chapter_number + lesson_number (numeric indices, legacy)
+
+	Usage:
+		POST /api/method/lms.lms.api.mark_lesson_progress
+		Body: {"lesson": "lesson-name"}
+		  OR: {"course": "course-name", "chapter_number": 1, "lesson_number": 1}
+	"""
+	if lesson:
+		# Look up course from the lesson
+		lesson_name = lesson
+		if not frappe.db.exists("Course Lesson", lesson_name):
+			frappe.throw(_("Lesson not found"), frappe.DoesNotExistError)
+
+		chapter_name = frappe.db.get_value("Course Lesson", lesson_name, "chapter")
+		if not chapter_name:
+			frappe.throw(_("Chapter not found for this lesson"))
+
+		# Find the course from the chapter reference
+		course = frappe.db.get_value(
+			"Chapter Reference", {"chapter": chapter_name}, "parent"
+		)
+		if not course:
+			frappe.throw(_("Course not found for this lesson"))
+	elif course and chapter_number and lesson_number:
+		# Legacy: look up by numeric indices
+		chapter_name = frappe.get_value(
+			"Chapter Reference", {"parent": course, "idx": chapter_number}, "chapter"
+		)
+		lesson_name = frappe.get_value(
+			"Lesson Reference", {"parent": chapter_name, "idx": lesson_number}, "lesson"
+		)
+	else:
+		frappe.throw(_("Either 'lesson' name or 'course' with 'chapter_number' and 'lesson_number' is required"))
+
 	save_progress(lesson_name, course)
 
 
@@ -4544,8 +4579,9 @@ def get_course_progress(course):
 @frappe.whitelist()
 def get_course_outline_for_student(course):
 	"""
-	Get complete course structure with chapters and lessons for a student.
+	Get complete course structure with chapters and lessons.
 	Includes progress information for each lesson.
+	Accessible by enrolled students, instructors, and admins.
 
 	Args:
 		course: Course name/ID
@@ -4554,7 +4590,7 @@ def get_course_outline_for_student(course):
 		dict: Course outline with chapters and lessons
 
 	Usage:
-		GET /api/method/lms.lms.api.get_course_outline_for_student?course=<course_id>
+		GET /api/method/lms.lms.api.get_course_outline_for_student?course=<course_name>
 		Headers: Authorization: token <api_key>:<api_secret>
 	"""
 	if frappe.session.user == "Guest":
@@ -4566,12 +4602,12 @@ def get_course_outline_for_student(course):
 	if not frappe.db.exists("LMS Course", course):
 		frappe.throw(_("Course not found"), frappe.DoesNotExistError)
 
-	# Verify enrollment (optional - could allow preview)
 	user = frappe.session.user
 	is_enrolled = frappe.db.exists(
 		"LMS Enrollment",
 		{"member": user, "course": course}
 	)
+	has_access = is_enrolled or has_moderator_role() or is_instructor(course)
 
 	# Get course title
 	course_title = frappe.db.get_value("LMS Course", course, "title")
@@ -4659,6 +4695,7 @@ def get_course_outline_for_student(course):
 		"title": course_title,
 		"total_lessons": total_lessons,
 		"is_enrolled": bool(is_enrolled),
+		"has_access": bool(has_access),
 		"chapters": outline
 	}
 
@@ -4720,14 +4757,15 @@ def get_lesson_details_for_student(lesson):
 	)
 	lesson_number = f"{chapter_idx}-{lesson_idx}" if chapter_idx and lesson_idx else None
 
-	# Check enrollment
+	# Check enrollment and instructor access
 	is_enrolled = frappe.db.exists(
 		"LMS Enrollment",
 		{"member": user, "course": course}
 	)
+	has_access = is_enrolled or has_moderator_role() or is_instructor(course)
 
 	# Check if content is accessible
-	if not lesson_doc.include_in_preview and not is_enrolled:
+	if not lesson_doc.include_in_preview and not has_access:
 		return {
 			"name": lesson_doc.name,
 			"title": lesson_doc.title,
@@ -4761,6 +4799,7 @@ def get_lesson_details_for_student(lesson):
 		"file_type": lesson_doc.file_type,
 		"is_complete": bool(is_complete),
 		"is_enrolled": bool(is_enrolled),
+		"has_access": bool(has_access),
 		"prev_lesson": prev_lesson,
 		"next_lesson": next_lesson
 	}
