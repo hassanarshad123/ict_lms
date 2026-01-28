@@ -1189,9 +1189,15 @@ def get_batch_details(batch):
 		{"batch": batch, "status": ["in", ["Active", "Extended"]]},
 		pluck="member"
 	)
+	# Check if user is an instructor on this batch (for teachers)
+	is_batch_instructor = frappe.db.exists(
+		"Course Instructor",
+		{"parent": batch, "parenttype": "LMS Batch", "instructor": frappe.session.user}
+	)
 	if (
 		not frappe.db.get_value("LMS Batch", batch, "published")
 		and not can_create_batches()
+		and not is_batch_instructor
 		and frappe.session.user not in batch_students
 	):
 		return

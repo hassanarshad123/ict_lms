@@ -168,18 +168,22 @@ const openLiveClassModal = () => {
 const canCreateClass = () => {
 	if (readOnlyMode) return false
 	if (!props.zoomAccount) return false
-	return hasPermission()
+	// Only Admin, Course Creator can create live classes - NOT teachers
+	return user.data?.is_moderator || user.data?.is_evaluator || user.data?.is_course_creator
 }
 
 const hasPermission = () => {
+	// Used for general access (view, etc.)
 	return user.data?.is_moderator || user.data?.is_evaluator || user.data?.is_course_creator || user.data?.is_teacher
 }
 
 const canStartClass = (cls) => {
 	// Moderators and evaluators can always start
 	if (user.data?.is_moderator || user.data?.is_evaluator) return true
-	// Course creators and teachers can start if they created the class
-	if ((user.data?.is_course_creator || user.data?.is_teacher) && cls.owner === user.data?.name) return true
+	// Course creators can start if they created the class
+	if (user.data?.is_course_creator && cls.owner === user.data?.name) return true
+	// Teachers can start any class in their assigned batch
+	if (user.data?.is_teacher) return true
 	return false
 }
 
