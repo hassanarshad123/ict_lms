@@ -168,8 +168,9 @@ const openLiveClassModal = () => {
 const canCreateClass = () => {
 	if (readOnlyMode) return false
 	if (!props.zoomAccount) return false
-	// Only Admin, Course Creator can create live classes - NOT teachers
-	return user.data?.is_moderator || user.data?.is_evaluator || user.data?.is_course_creator
+	// Only Admin (Moderator) and Course Creator can create live classes
+	// Teachers and Evaluators can only start/join classes, not create them
+	return user.data?.is_moderator || user.data?.is_course_creator
 }
 
 const hasPermission = () => {
