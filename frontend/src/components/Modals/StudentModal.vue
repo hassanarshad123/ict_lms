@@ -21,11 +21,10 @@
 					</label>
 					<Autocomplete
 						ref="autocomplete"
-						:options="userOptions"
+						:options="filteredUsers"
 						v-model="selectedUser"
 						size="sm"
 						:placeholder="__('Search by name or email...')"
-						:filterable="false"
 					>
 						<template #footer="{ close }">
 							<div>
@@ -51,7 +50,6 @@
 import { Dialog, createResource, toast, Autocomplete, Button } from 'frappe-ui'
 import { ref, inject, computed, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
-import { watchDebounced } from '@vueuse/core'
 import { useOnboarding } from 'frappe-ui/frappe'
 import { openSettings } from '@/utils'
 
@@ -63,7 +61,6 @@ const user = inject('$user')
 const { updateOnboardingStep } = useOnboarding('learning')
 const show = defineModel()
 const autocomplete = ref(null)
-const searchText = ref('')
 
 const props = defineProps({
 	batch: {
@@ -72,46 +69,40 @@ const props = defineProps({
 	},
 })
 
-// Watch for autocomplete query changes
-watchDebounced(
-	() => autocomplete.value?.query,
-	(val) => {
-		val = val || ''
-		if (searchText.value === val) return
-		searchText.value = val
-		searchUsers.reload()
-	},
-	{ debounce: 300, immediate: true }
-)
-
-// Search users API
-const searchUsers = createResource({
-	url: 'lms.lms.api.search_users_for_batch',
-	params: {
-		txt: searchText.value,
-		page_length: 20,
-	},
+// Load all users on mount
+const allUsers = createResource({
+	url: 'lms.lms.api.get_all_users',
 	auto: true,
 	transform: (data) => {
-		return data.map((user) => ({
-			label: user.label,
-			value: user.value,
-			description: user.description,
+		// Convert from {email: {name, full_name, user_image}} to array format
+		return Object.entries(data).map(([email, userInfo]) => ({
+			label: userInfo.full_name || email,
+			value: email,
+			description: email !== userInfo.full_name ? email : '',
 		}))
 	},
 })
 
-// Update params when search text changes
-watch(searchText, (val) => {
-	searchUsers.update({
-		params: {
-			txt: val,
-			page_length: 20,
-		},
-	})
+// Reload users when dialog opens
+watch(show, (isOpen) => {
+	if (isOpen) {
+		allUsers.reload()
+	}
 })
 
-const userOptions = computed(() => searchUsers.data || [])
+// Filter users based on autocomplete query (client-side filtering)
+const filteredUsers = computed(() => {
+	const users = allUsers.data || []
+	const query = autocomplete.value?.query?.toLowerCase() || ''
+
+	if (!query) return users
+
+	return users.filter(u =>
+		u.label?.toLowerCase().includes(query) ||
+		u.value?.toLowerCase().includes(query) ||
+		u.description?.toLowerCase().includes(query)
+	)
+})
 
 const studentResource = createResource({
 	url: 'frappe.client.insert',

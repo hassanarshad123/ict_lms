@@ -4,7 +4,7 @@
 			<div class="text-ink-gray-9 font-medium">
 				{{ students.data?.length }} {{ __('Students') }}
 			</div>
-			<Button v-if="!readOnlyMode" @click="openStudentModal()">
+			<Button v-if="canAddStudents" @click="openStudentModal()">
 				<template #prefix>
 					<Plus class="h-4 w-4" />
 				</template>
@@ -123,7 +123,7 @@ import {
 	toast,
 } from 'frappe-ui'
 import { Plus, Trash2 } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { ref, watch, inject, computed } from 'vue'
 import StudentModal from '@/components/Modals/StudentModal.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 import BatchStudentProgress from '@/components/Modals/BatchStudentProgress.vue'
@@ -132,6 +132,14 @@ const showStudentModal = ref(false)
 const showStudentProgressModal = ref(false)
 const selectedStudent = ref(null)
 const readOnlyMode = window.read_only_mode
+const user = inject('$user')
+
+// Only Admin (Moderator) and Course Creator can add students
+// Teachers and Evaluators can only view students
+const canAddStudents = computed(() => {
+	if (readOnlyMode) return false
+	return user.data?.is_moderator || user.data?.is_course_creator
+})
 
 const props = defineProps({
 	batch: {
