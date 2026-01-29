@@ -658,6 +658,57 @@ def get_all_users():
 
 
 @frappe.whitelist()
+def search_users_for_batch(txt="", page_length=20):
+	"""
+	Search users for batch enrollment dropdown.
+	This API doesn't require desk access, so Course Creators can use it.
+
+	Args:
+		txt: Search text to filter users
+		page_length: Number of results to return
+
+	Returns:
+		list: Users matching the search criteria in search_link format
+	"""
+	frappe.only_for(["Moderator", "Course Creator", "Batch Evaluator", "LMS Teacher"])
+
+	txt = txt or ""
+	page_length = cint(page_length) or 20
+
+	# Build filters
+	filters = {"enabled": 1, "user_type": ["!=", "Administrator"]}
+
+	# Search in name, full_name, and email
+	or_filters = []
+	if txt:
+		or_filters = [
+			["full_name", "like", f"%{txt}%"],
+			["name", "like", f"%{txt}%"],
+			["email", "like", f"%{txt}%"],
+		]
+
+	users = frappe.get_all(
+		"User",
+		filters=filters,
+		or_filters=or_filters if or_filters else None,
+		fields=["name", "full_name", "user_image", "email"],
+		limit_page_length=page_length,
+		order_by="full_name asc",
+		ignore_permissions=True
+	)
+
+	# Format for Link component (same as search_link)
+	return [
+		{
+			"value": user.name,
+			"label": user.full_name or user.name,
+			"description": user.email if user.email != user.name else ""
+		}
+		for user in users
+	]
+
+
+@frappe.whitelist()
 def mark_as_read(name):
 	doc = frappe.get_doc("Notification Log", name)
 	doc.read = 1

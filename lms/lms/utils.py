@@ -1205,10 +1205,12 @@ def get_neighbour_lesson(course, chapter, lesson):
 @rate_limit(limit=500, seconds=60 * 60)
 def get_batch_details(batch):
 	# Only get active enrollments (not expired or manually removed)
+	# Use ignore_permissions to ensure Course Creators can see students
 	batch_students = frappe.get_all(
 		"LMS Batch Enrollment",
 		{"batch": batch, "status": ["in", ["Active", "Extended"]]},
-		pluck="member"
+		pluck="member",
+		ignore_permissions=True
 	)
 	# Check if user is an instructor on this batch (for teachers)
 	is_batch_instructor = frappe.db.exists(
@@ -1464,12 +1466,28 @@ def get_exercise_details(assessment, member):
 
 @frappe.whitelist()
 def get_batch_students(batch):
+	"""
+	Get all students enrolled in a batch with their progress.
+	Accessible to Admin, Course Creator, Batch Evaluator, and LMS Teacher.
+	"""
+	# Verify user has permission to view batch students
+	if not can_create_batches() and not has_teacher_role():
+		# Check if user is an instructor on this batch
+		is_batch_instructor = frappe.db.exists(
+			"Course Instructor",
+			{"parent": batch, "parenttype": "LMS Batch", "instructor": frappe.session.user}
+		)
+		if not is_batch_instructor:
+			frappe.throw(_("You don't have permission to view students for this batch"))
+
 	students = []
 	# Only get active enrollments (not expired or manually removed)
+	# Use ignore_permissions since we already verified access above
 	students_list = frappe.get_all(
 		"LMS Batch Enrollment",
 		filters={"batch": batch, "status": ["in", ["Active", "Extended"]]},
-		fields=["member", "name"]
+		fields=["member", "name"],
+		ignore_permissions=True
 	)
 
 	for student in students_list:
