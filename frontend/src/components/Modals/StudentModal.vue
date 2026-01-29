@@ -71,16 +71,8 @@ const props = defineProps({
 
 // Load all users on mount
 const allUsers = createResource({
-	url: 'lms.lms.api.get_all_users',
+	url: 'lms.lms.api.get_all_users_for_batch',
 	auto: true,
-	transform: (data) => {
-		// Convert from {email: {name, full_name, user_image}} to array format
-		return Object.entries(data).map(([email, userInfo]) => ({
-			label: userInfo.full_name || email,
-			value: email,
-			description: email !== userInfo.full_name ? email : '',
-		}))
-	},
 })
 
 // Reload users when dialog opens

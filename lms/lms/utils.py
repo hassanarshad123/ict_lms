@@ -1470,19 +1470,8 @@ def get_batch_students(batch):
 	Get all students enrolled in a batch with their progress.
 	Accessible to Admin, Course Creator, Batch Evaluator, and LMS Teacher.
 	"""
-	# Verify user has permission to view batch students
-	if not can_create_batches() and not has_teacher_role():
-		# Check if user is an instructor on this batch
-		is_batch_instructor = frappe.db.exists(
-			"Course Instructor",
-			{"parent": batch, "parenttype": "LMS Batch", "instructor": frappe.session.user}
-		)
-		if not is_batch_instructor:
-			frappe.throw(_("You don't have permission to view students for this batch"))
-
 	students = []
 	# Only get active enrollments (not expired or manually removed)
-	# Use ignore_permissions since we already verified access above
 	students_list = frappe.get_all(
 		"LMS Batch Enrollment",
 		filters={"batch": batch, "status": ["in", ["Active", "Extended"]]},

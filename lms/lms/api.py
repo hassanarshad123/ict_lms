@@ -652,9 +652,37 @@ def get_all_users():
 			"enabled": 1,
 		},
 		["name", "full_name", "user_image"],
+		ignore_permissions=True
 	)
 
 	return {user.name: user for user in users}
+
+
+@frappe.whitelist()
+def get_all_users_for_batch():
+	"""
+	Get all users for batch enrollment dropdown.
+	Returns users in array format for Autocomplete component.
+	"""
+	frappe.only_for(["Moderator", "Course Creator", "Batch Evaluator"])
+
+	users = frappe.get_all(
+		"User",
+		filters={"enabled": 1, "user_type": ["!=", "Administrator"]},
+		fields=["name", "full_name", "user_image", "email"],
+		order_by="full_name asc",
+		ignore_permissions=True
+	)
+
+	# Format for Autocomplete component
+	return [
+		{
+			"value": user.name,
+			"label": user.full_name or user.name,
+			"description": user.email if user.email != user.name else ""
+		}
+		for user in users
+	]
 
 
 @frappe.whitelist()
