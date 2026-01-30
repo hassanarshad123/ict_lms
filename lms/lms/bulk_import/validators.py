@@ -92,9 +92,23 @@ def _parse_date(date_str):
 	"""Try to parse a date string in common formats. Returns date or None."""
 	if not date_str:
 		return None
+
+	# Normalize single-digit months/days by zero-padding (e.g., 1/30/2026 -> 01/30/2026)
+	normalized = date_str
+	if "/" in date_str:
+		parts = date_str.split("/")
+		if len(parts) == 3:
+			parts = [p.zfill(2) if len(p) <= 2 else p for p in parts]
+			normalized = "/".join(parts)
+	elif "-" in date_str and not date_str.startswith("20"):
+		parts = date_str.split("-")
+		if len(parts) == 3:
+			parts = [p.zfill(2) if len(p) <= 2 else p for p in parts]
+			normalized = "-".join(parts)
+
 	for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"):
 		try:
-			return datetime.strptime(date_str, fmt).date()
+			return datetime.strptime(normalized, fmt).date()
 		except ValueError:
 			continue
 	return None
