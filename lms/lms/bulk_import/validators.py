@@ -89,9 +89,45 @@ def validate_row(row, row_num):
 
 
 def _parse_date(date_str):
-	"""Try to parse a date string in common formats. Returns date or None."""
+	"""
+	Try to parse a date string in all common formats. Returns date or None.
+
+	Handles:
+	- ISO formats: 2026-01-13, 2026/01/13
+	- US formats: 01/13/2026, 1/13/2026
+	- EU formats: 13/01/2026, 13-01-2026
+	- With time: 2026-01-13 00:00:00, 2026-01-13T00:00:00Z
+	- Month names: Jan 13, 2026, 13 January 2026
+	- Excel serial dates: 46035 (days since 1900-01-01)
+	"""
 	if not date_str:
 		return None
+
+	# Strip whitespace
+	date_str = str(date_str).strip()
+
+	# Handle Excel serial date numbers (integer representing days since 1899-12-30)
+	if date_str.isdigit():
+		try:
+			serial = int(date_str)
+			# Excel serial dates are typically 5 digits for modern dates (e.g., 46035 = 2026-01-13)
+			if 1 < serial < 100000:
+				# Excel epoch is 1899-12-30 (accounting for the leap year bug)
+				from datetime import timedelta
+				excel_epoch = datetime(1899, 12, 30)
+				return (excel_epoch + timedelta(days=serial)).date()
+		except (ValueError, OverflowError):
+			pass
+
+	# Remove time portion if present (e.g., "2026-01-13 00:00:00" -> "2026-01-13")
+	# Handle both space and T separators for datetime
+	if " " in date_str:
+		date_part = date_str.split(" ")[0]
+		# Check if the part after space looks like time (contains :)
+		if ":" in date_str.split(" ", 1)[1]:
+			date_str = date_part
+	if "T" in date_str:
+		date_str = date_str.split("T")[0]
 
 	# Normalize single-digit months/days by zero-padding (e.g., 1/30/2026 -> 01/30/2026)
 	normalized = date_str
@@ -105,12 +141,58 @@ def _parse_date(date_str):
 		if len(parts) == 3:
 			parts = [p.zfill(2) if len(p) <= 2 else p for p in parts]
 			normalized = "-".join(parts)
+	elif "." in date_str:
+		parts = date_str.split(".")
+		if len(parts) == 3:
+			parts = [p.zfill(2) if len(p) <= 2 else p for p in parts]
+			normalized = ".".join(parts)
 
-	for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"):
+	# Try all common date formats
+	formats = [
+		# ISO and standard formats
+		"%Y-%m-%d",
+		"%Y/%m/%d",
+		"%Y.%m.%d",
+		# Day first (common in UK, Europe, Asia)
+		"%d/%m/%Y",
+		"%d-%m-%Y",
+		"%d.%m.%Y",
+		# Month first (common in US)
+		"%m/%d/%Y",
+		"%m-%d-%Y",
+		"%m.%d.%Y",
+		# Two-digit year variants
+		"%d/%m/%y",
+		"%m/%d/%y",
+		"%d-%m-%y",
+		"%m-%d-%y",
+		"%y-%m-%d",
+		# Month name formats
+		"%d %b %Y",  # 13 Jan 2026
+		"%d %B %Y",  # 13 January 2026
+		"%b %d, %Y",  # Jan 13, 2026
+		"%B %d, %Y",  # January 13, 2026
+		"%b %d %Y",  # Jan 13 2026
+		"%B %d %Y",  # January 13 2026
+		"%d-%b-%Y",  # 13-Jan-2026
+		"%d-%B-%Y",  # 13-January-2026
+		"%Y%m%d",  # 20260113 (compact)
+	]
+
+	for fmt in formats:
 		try:
 			return datetime.strptime(normalized, fmt).date()
 		except ValueError:
 			continue
+
+	# Fallback: try dateutil parser (handles almost any format)
+	try:
+		from dateutil import parser as dateutil_parser
+		parsed = dateutil_parser.parse(date_str, dayfirst=False)
+		return parsed.date()
+	except Exception:
+		pass
+
 	return None
 
 

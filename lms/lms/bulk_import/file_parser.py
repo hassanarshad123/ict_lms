@@ -1,5 +1,6 @@
 import csv
 import io
+from datetime import date, datetime
 
 import frappe
 from frappe import _
@@ -63,7 +64,7 @@ def parse_import_file(file_url):
 			row["batch_id"] = row["batch_id"].strip()
 			row["enrolled_time"] = _parse_date(row["enrolled_time"].strip()).strftime("%Y-%m-%d")
 			row["expiry_time"] = _parse_date(row["expiry_time"].strip()).strftime("%Y-%m-%d")
-			row["phone"] = (row.get("phone") or "").strip()
+			row["phone"] = _normalize_phone((row.get("phone") or "").strip())
 			row["password"] = generate_password(row["last_name"], row["batch_id"])
 			valid_rows.append(row)
 
@@ -119,11 +120,39 @@ def _parse_xlsx(content):
 			continue
 		row = {}
 		for col_name, value in zip(columns, row_values):
-			row[col_name] = str(value).strip() if value is not None else ""
+			if isinstance(value, (datetime, date)):
+				# Excel dates come as datetime objects - format as YYYY-MM-DD
+				row[col_name] = value.strftime("%Y-%m-%d")
+			else:
+				row[col_name] = str(value).strip() if value is not None else ""
 		rows.append(row)
 
 	wb.close()
 	return rows
+
+
+def _normalize_phone(phone_str):
+	"""
+	Normalize phone number, handling Excel scientific notation.
+
+	Examples:
+		9.23001E+11 -> 923001000000
+		9233447891238 -> 9233447891238
+		+923001234567 -> +923001234567
+	"""
+	if not phone_str:
+		return ""
+
+	# Handle scientific notation (e.g., 9.23001E+11)
+	if "E" in phone_str.upper():
+		try:
+			# Convert scientific notation to integer
+			num = int(float(phone_str))
+			return str(num)
+		except (ValueError, OverflowError):
+			return phone_str
+
+	return phone_str
 
 
 def generate_password(last_name, batch_id):
