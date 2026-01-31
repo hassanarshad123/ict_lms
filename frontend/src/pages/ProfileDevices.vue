@@ -56,7 +56,7 @@
 							</span>
 							<span v-if="device.ip_address && device.last_active" class="mx-2">|</span>
 							<span v-if="device.last_active">
-								{{ __('Last active') }}: {{ formatDate(device.last_active) }}
+								{{ __('Last active') }}: {{ timeAgo(device.last_active) }}
 							</span>
 						</div>
 					</div>
@@ -69,18 +69,16 @@
 				{{ __('About Device Limits') }}
 			</h3>
 			<p class="text-sm text-ink-gray-7">
-				{{ __('You can be logged in from up to {0} devices simultaneously. If you reach this limit, please contact your administrator to reset your device access.', [devices.data?.max_devices]) }}
+				{{ __('You can be logged in from up to {0} devices simultaneously. If you reach this limit, please contact your administrator to reset your device access.').format(devices.data?.max_devices) }}
 			</p>
 		</div>
 	</div>
 </template>
 
 <script setup>
-import { inject } from 'vue'
 import { createResource, Badge, Spinner } from 'frappe-ui'
 import { Monitor, Smartphone, Laptop } from 'lucide-vue-next'
-
-const dayjs = inject('$dayjs')
+import { timeAgo } from '@/utils'
 
 const props = defineProps({
 	profile: {
@@ -93,21 +91,6 @@ const devices = createResource({
 	url: 'lms.lms.api.get_my_devices',
 	auto: true,
 })
-
-const formatDate = (dateString) => {
-	if (!dateString) return ''
-	const date = dayjs(dateString)
-	const now = dayjs()
-	const diffMinutes = now.diff(date, 'minute')
-	const diffHours = now.diff(date, 'hour')
-	const diffDays = now.diff(date, 'day')
-
-	if (diffMinutes < 1) return __('Just now')
-	if (diffMinutes < 60) return __('%s minutes ago', [diffMinutes])
-	if (diffHours < 24) return __('%s hours ago', [diffHours])
-	if (diffDays < 7) return __('%s days ago', [diffDays])
-	return date.format('DD MMM YYYY, HH:mm')
-}
 
 const isDesktop = (deviceName) => {
 	if (!deviceName) return false

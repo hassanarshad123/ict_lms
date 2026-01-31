@@ -49,7 +49,7 @@
 								<div class="text-xs text-ink-gray-7 mt-0.5">
 									<span v-if="device.ip_address">{{ device.ip_address }}</span>
 									<span v-if="device.ip_address && device.last_active" class="mx-1">|</span>
-									<span v-if="device.last_active">{{ formatDate(device.last_active) }}</span>
+									<span v-if="device.last_active">{{ timeAgo(device.last_active) }}</span>
 								</div>
 							</div>
 						</div>
@@ -88,12 +88,10 @@
 </template>
 
 <script setup>
-import { ref, watch, inject } from 'vue'
+import { ref, watch } from 'vue'
 import { Dialog, createResource, Button, Spinner } from 'frappe-ui'
 import { Monitor, Smartphone, Laptop, Trash2 } from 'lucide-vue-next'
-import { showToast } from '@/utils'
-
-const dayjs = inject('$dayjs')
+import { showToast, timeAgo } from '@/utils'
 
 const show = defineModel()
 const removingDevice = ref(null)
@@ -166,21 +164,6 @@ const removeDevice = (deviceId) => {
 const clearAllDevices = () => {
 	clearingAll.value = true
 	clearAllResource.submit({ user: props.user })
-}
-
-const formatDate = (dateString) => {
-	if (!dateString) return ''
-	const date = dayjs(dateString)
-	const now = dayjs()
-	const diffMinutes = now.diff(date, 'minute')
-	const diffHours = now.diff(date, 'hour')
-	const diffDays = now.diff(date, 'day')
-
-	if (diffMinutes < 1) return __('Just now')
-	if (diffMinutes < 60) return __('%s min ago', [diffMinutes])
-	if (diffHours < 24) return __('%s hrs ago', [diffHours])
-	if (diffDays < 7) return __('%s days ago', [diffDays])
-	return date.format('DD MMM YYYY')
 }
 
 const isDesktop = (deviceName) => {
