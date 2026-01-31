@@ -6557,10 +6557,15 @@ def _process_bulk_import_sync(import_log, valid_rows, parse_errors, send_welcome
 	Process bulk import synchronously. Used for both small imports and background jobs.
 	Processes in batches and updates progress periodically.
 	"""
+	import time
 	from datetime import datetime
 
 	from frappe.utils import escape_html
 	from frappe.utils.password import update_password
+
+	# Set flags to bypass rate limiting during bulk import
+	frappe.flags.in_import = True
+	frappe.flags.in_migrate = True
 
 	import_log.status = "Processing"
 	import_log.save(ignore_permissions=True)
@@ -6620,37 +6625,59 @@ def _process_bulk_import_sync(import_log, valid_rows, parse_errors, send_welcome
 			user_created = False
 
 			if not user_exists:
-				full_name = f"{first_name} {last_name}"
-				user = frappe.get_doc({
-					"doctype": "User",
-					"email": email,
-					"first_name": escape_html(first_name),
-					"last_name": escape_html(last_name),
-					"full_name": escape_html(full_name),
-					"phone": phone,
-					"enabled": 1,
-					"send_welcome_email": 0,
-					"user_type": "Website User",
-				})
-				user.flags.ignore_permissions = True
-				user.flags.ignore_password_policy = True
-				user.flags.no_welcome_mail = True
-				user.flags.delay_emails = True
-				user.flags.ignore_contact_creation = True
-				user.insert()
-				frappe.db.commit()
+				# Retry logic for throttling
+				max_retries = 3
+				retry_delay = 1  # seconds
 
-				# Set password
-				update_password(user.name, password)
+				for attempt in range(max_retries):
+					try:
+						full_name = f"{first_name} {last_name}"
+						user = frappe.get_doc({
+							"doctype": "User",
+							"email": email,
+							"first_name": escape_html(first_name),
+							"last_name": escape_html(last_name),
+							"full_name": escape_html(full_name),
+							"phone": phone,
+							"enabled": 1,
+							"send_welcome_email": 0,
+							"user_type": "Website User",
+						})
+						user.flags.ignore_permissions = True
+						user.flags.ignore_password_policy = True
+						user.flags.no_welcome_mail = True
+						user.flags.delay_emails = True
+						user.flags.ignore_contact_creation = True
+						user.flags.in_import = True
+						user.insert()
+						frappe.db.commit()
 
-				# Add roles
-				default_role = frappe.db.get_single_value("Portal Settings", "default_role")
-				if default_role:
-					user.add_roles(default_role)
-				user.add_roles("LMS Student")
+						# Set password
+						update_password(user.name, password)
 
-				user_created = True
-				summary["users_created"] += 1
+						# Add roles
+						default_role = frappe.db.get_single_value("Portal Settings", "default_role")
+						if default_role:
+							user.add_roles(default_role)
+						user.add_roles("LMS Student")
+
+						user_created = True
+						summary["users_created"] += 1
+						break  # Success, exit retry loop
+
+					except Exception as retry_error:
+						error_str = str(retry_error).lower()
+						if "throttle" in error_str and attempt < max_retries - 1:
+							# Wait and retry for throttling errors
+							time.sleep(retry_delay * (attempt + 1))
+							frappe.db.rollback()
+							continue
+						else:
+							raise  # Re-raise for non-throttle errors or final attempt
+
+				# Small delay between user creations to prevent throttling
+				if user_created:
+					time.sleep(0.1)
 
 			# Step 3: Create enrollment
 			start_date = datetime.strptime(enrolled_time, "%Y-%m-%d").date()
@@ -6714,9 +6741,10 @@ def _process_bulk_import_sync(import_log, valid_rows, parse_errors, send_welcome
 		if row_num % PROGRESS_UPDATE_INTERVAL == 0:
 			import_log.reload()
 			import_log.users_created = summary["users_created"]
+			import_log.users_enrolled_existing = summary["users_enrolled_existing"]
+			import_log.users_skipped = summary["skipped"]
 			import_log.users_failed = summary["failed"]
 			import_log.enrollments_created = summary["enrollments_created"]
-			import_log.enrollments_failed = 0  # We don't track this separately anymore
 			import_log.save(ignore_permissions=True)
 			frappe.db.commit()
 
@@ -6729,14 +6757,19 @@ def _process_bulk_import_sync(import_log, valid_rows, parse_errors, send_welcome
 	import_log.status = "Completed"
 	import_log.total_rows = summary["total_rows"]
 	import_log.users_created = summary["users_created"]
+	import_log.users_enrolled_existing = summary["users_enrolled_existing"]
+	import_log.users_skipped = summary["skipped"]
 	import_log.users_failed = summary["failed"]
 	import_log.enrollments_created = summary["enrollments_created"]
-	import_log.enrollments_failed = 0
 	import_log.details_json = json.dumps(results, default=str)
 	if parse_errors:
 		import_log.error_log = "\n".join(parse_errors)
 	import_log.save(ignore_permissions=True)
 	frappe.db.commit()
+
+	# Reset flags
+	frappe.flags.in_import = False
+	frappe.flags.in_migrate = False
 
 	return {
 		"success": True,

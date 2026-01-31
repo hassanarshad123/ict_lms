@@ -11,12 +11,15 @@
   "file_url",
   "status",
   "section_break_summary",
+  "summary_html",
+  "section_break_counts",
   "total_rows",
   "users_created",
-  "users_failed",
+  "users_enrolled_existing",
   "column_break_summary",
+  "users_skipped",
+  "users_failed",
   "enrollments_created",
-  "enrollments_failed",
   "section_break_details",
   "details_json",
   "section_break_errors",
@@ -65,6 +68,18 @@
    "label": "Summary"
   },
   {
+   "fieldname": "summary_html",
+   "fieldtype": "HTML",
+   "label": "Summary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_counts",
+   "fieldtype": "Section Break",
+   "label": "Counts",
+   "collapsible": 1
+  },
+  {
    "default": "0",
    "fieldname": "total_rows",
    "fieldtype": "Int",
@@ -76,19 +91,33 @@
    "default": "0",
    "fieldname": "users_created",
    "fieldtype": "Int",
-   "label": "Users Created",
+   "label": "New Users Created",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "users_enrolled_existing",
+   "fieldtype": "Int",
+   "label": "Existing Users Enrolled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_summary",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "users_skipped",
+   "fieldtype": "Int",
+   "label": "Already Enrolled (Skipped)",
    "read_only": 1
   },
   {
    "default": "0",
    "fieldname": "users_failed",
    "fieldtype": "Int",
-   "label": "Users Failed",
+   "label": "Failed",
    "read_only": 1
-  },
-  {
-   "fieldname": "column_break_summary",
-   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -98,16 +127,10 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "fieldname": "enrollments_failed",
-   "fieldtype": "Int",
-   "label": "Enrollments Failed",
-   "read_only": 1
-  },
-  {
    "fieldname": "section_break_details",
    "fieldtype": "Section Break",
-   "label": "Details"
+   "label": "Details (JSON)",
+   "collapsible": 1
   },
   {
    "fieldname": "details_json",
@@ -118,7 +141,8 @@
   {
    "fieldname": "section_break_errors",
    "fieldtype": "Section Break",
-   "label": "Error Log"
+   "label": "Error Log",
+   "collapsible": 1
   },
   {
    "fieldname": "error_log",
@@ -129,7 +153,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-01-27 12:00:00.000000",
+ "modified": "2026-01-31 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "LMS",
  "name": "LMS Bulk Import Log",
