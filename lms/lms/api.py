@@ -6482,7 +6482,7 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True):
 	# Create import log
 	import_log = frappe.new_doc("LMS Bulk Import Log")
 	import_log.file_url = file_url
-	import_log.status = "Queued"
+	import_log.status = "Pending"
 	import_log.insert(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -6516,8 +6516,8 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True):
 		return {
 			"success": True,
 			"import_log_id": import_log.name,
-			"status": "queued",
-			"message": f"Import of {total_rows} rows queued for background processing. Check import log for progress.",
+			"status": "pending",
+			"message": f"Import of {total_rows} rows is being processed in the background. Check import log for progress.",
 		}
 	else:
 		# Process small imports synchronously
