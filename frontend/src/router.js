@@ -100,6 +100,11 @@ const routes = [
 				component: () =>
 					import('@/pages/ProfileEvaluationSchedule.vue'),
 			},
+			{
+				name: 'ProfileDevices',
+				path: 'devices',
+				component: () => import('@/pages/ProfileDevices.vue'),
+			},
 		],
 	},
 	{

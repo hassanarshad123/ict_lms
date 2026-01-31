@@ -148,32 +148,34 @@ def _parse_date(date_str):
 			normalized = ".".join(parts)
 
 	# Try all common date formats
+	# NOTE: US format (M/D/Y) is tried BEFORE EU format (D/M/Y) because
+	# ambiguous dates like 1/9/2026 are more commonly US format in this context
 	formats = [
-		# ISO and standard formats
+		# ISO and standard formats (unambiguous)
 		"%Y-%m-%d",
 		"%Y/%m/%d",
 		"%Y.%m.%d",
-		# Day first (common in UK, Europe, Asia)
-		"%d/%m/%Y",
-		"%d-%m-%Y",
-		"%d.%m.%Y",
-		# Month first (common in US)
+		# Month first (common in US) - try BEFORE day-first to handle ambiguous dates
 		"%m/%d/%Y",
 		"%m-%d-%Y",
 		"%m.%d.%Y",
-		# Two-digit year variants
-		"%d/%m/%y",
+		# Day first (common in UK, Europe)
+		"%d/%m/%Y",
+		"%d-%m-%Y",
+		"%d.%m.%Y",
+		# Two-digit year variants (US first)
 		"%m/%d/%y",
-		"%d-%m-%y",
+		"%d/%m/%y",
 		"%m-%d-%y",
+		"%d-%m-%y",
 		"%y-%m-%d",
 		# Month name formats
-		"%d %b %Y",  # 13 Jan 2026
-		"%d %B %Y",  # 13 January 2026
 		"%b %d, %Y",  # Jan 13, 2026
 		"%B %d, %Y",  # January 13, 2026
 		"%b %d %Y",  # Jan 13 2026
 		"%B %d %Y",  # January 13 2026
+		"%d %b %Y",  # 13 Jan 2026
+		"%d %B %Y",  # 13 January 2026
 		"%d-%b-%Y",  # 13-Jan-2026
 		"%d-%B-%Y",  # 13-January-2026
 		"%Y%m%d",  # 20260113 (compact)

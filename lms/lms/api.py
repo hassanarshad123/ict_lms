@@ -93,6 +93,8 @@ def api_login(usr, pwd):
 	"""
 	from frappe.utils.password import check_password as validate_password
 
+	from lms.lms.device_limit import check_device_limit, register_device
+
 	# Validate required fields
 	if not usr:
 		frappe.throw(_("Email or username is required"))
@@ -111,6 +113,18 @@ def api_login(usr, pwd):
 	# Check if user is enabled
 	if not user_doc.enabled:
 		frappe.throw(_("Your account has been disabled"), frappe.AuthenticationError)
+
+	# Check device limit before allowing login
+	can_login, message = check_device_limit(user)
+	if not can_login:
+		frappe.throw(message, frappe.AuthenticationError)
+
+	# Register device on successful login
+	try:
+		register_device(user)
+	except Exception:
+		# Log error but don't block login (graceful degradation)
+		frappe.log_error("Device registration failed during API login")
 
 	# Generate API secret (regenerated each login for security)
 	api_secret = frappe.generate_hash(length=15)
@@ -6937,4 +6951,158 @@ def admin_bulk_set_passwords(users):
 		"passwords_set": len(results["success"]),
 		"failed": len(results["failed"]),
 		"details": results,
+	}
+
+
+# Device Management API Endpoints
+
+
+@frappe.whitelist()
+def get_my_devices():
+	"""
+	Get all registered devices for the current user.
+
+	Returns:
+		dict: Contains list of devices with their details
+	"""
+	from lms.lms.device_limit import get_device_limit_settings, get_user_devices
+
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please login to view your devices"))
+
+	devices = get_user_devices(user)
+	settings = get_device_limit_settings()
+
+	return {
+		"devices": devices,
+		"device_limit_enabled": settings["enabled"],
+		"max_devices": settings["limit"],
+		"current_count": len(devices),
+	}
+
+
+@frappe.whitelist()
+def admin_get_user_devices(user):
+	"""
+	Admin endpoint to get all registered devices for a specific user.
+
+	Args:
+		user: User email to get devices for
+
+	Returns:
+		dict: Contains list of devices with their details
+	"""
+	from lms.lms.device_limit import get_device_limit_settings, get_user_devices
+
+	# Permission check - only Moderator/Admin can view other users' devices
+	roles = frappe.get_roles(frappe.session.user)
+	if "Moderator" not in roles and "System Manager" not in roles:
+		frappe.throw(_("You do not have permission to view user devices"))
+
+	if not user:
+		frappe.throw(_("User is required"))
+
+	if not frappe.db.exists("User", user):
+		frappe.throw(_("User does not exist"))
+
+	devices = get_user_devices(user)
+	settings = get_device_limit_settings()
+
+	return {
+		"user": user,
+		"devices": devices,
+		"device_limit_enabled": settings["enabled"],
+		"max_devices": settings["limit"],
+		"current_count": len(devices),
+	}
+
+
+@frappe.whitelist()
+def admin_clear_user_devices(user):
+	"""
+	Admin endpoint to clear all registered devices for a specific user.
+	Use this when a user is locked out due to device limit.
+
+	Args:
+		user: User email to clear devices for
+
+	Returns:
+		dict: Success status and number of devices removed
+	"""
+	from lms.lms.device_limit import clear_all_devices
+
+	# Permission check - only Moderator/Admin can clear user devices
+	roles = frappe.get_roles(frappe.session.user)
+	if "Moderator" not in roles and "System Manager" not in roles:
+		frappe.throw(_("You do not have permission to manage user devices"))
+
+	if not user:
+		frappe.throw(_("User is required"))
+
+	if not frappe.db.exists("User", user):
+		frappe.throw(_("User does not exist"))
+
+	count = clear_all_devices(user)
+	frappe.db.commit()
+
+	return {
+		"success": True,
+		"message": _("Cleared {0} devices for user {1}").format(count, user),
+		"devices_removed": count,
+	}
+
+
+@frappe.whitelist()
+def admin_remove_user_device(user, device_id):
+	"""
+	Admin endpoint to remove a specific device for a user.
+
+	Args:
+		user: User email
+		device_id: Device ID to remove
+
+	Returns:
+		dict: Success status and message
+	"""
+	from lms.lms.device_limit import remove_device
+
+	# Permission check - only Moderator/Admin can remove user devices
+	roles = frappe.get_roles(frappe.session.user)
+	if "Moderator" not in roles and "System Manager" not in roles:
+		frappe.throw(_("You do not have permission to manage user devices"))
+
+	if not user:
+		frappe.throw(_("User is required"))
+
+	if not device_id:
+		frappe.throw(_("Device ID is required"))
+
+	if not frappe.db.exists("User", user):
+		frappe.throw(_("User does not exist"))
+
+	success = remove_device(user, device_id)
+
+	if success:
+		frappe.db.commit()
+		return {"success": True, "message": _("Device removed successfully")}
+	else:
+		frappe.throw(_("Device not found"))
+
+
+@frappe.whitelist()
+def get_device_limit_settings():
+	"""
+	Get device limit settings (public, for UI display).
+
+	Returns:
+		dict: Device limit settings
+	"""
+	from lms.lms.device_limit import get_device_limit_settings as get_settings
+
+	settings = get_settings()
+
+	return {
+		"enabled": settings["enabled"],
+		"max_devices": settings["limit"],
 	}

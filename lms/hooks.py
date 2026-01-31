@@ -143,6 +143,8 @@ scheduler_events = {
 		# Time-limited batch enrollment tasks
 		"lms.lms.doctype.lms_batch_enrollment.enrollment_scheduler.expire_batch_enrollments",
 		"lms.lms.doctype.lms_batch_enrollment.enrollment_scheduler.send_expiry_reminders",
+		# Device limit cleanup
+		"lms.lms.device_limit.cleanup_stale_devices",
 	],
 }
 
@@ -258,7 +260,10 @@ profile_url_prefix = "/users/"
 
 signup_form_template = "lms.plugins.show_custom_signup"
 
-on_login = "lms.lms.user.on_login"
+on_login = [
+	"lms.lms.user.on_login",
+	"lms.lms.device_limit.on_user_login",
+]
 
 get_site_info = "lms.activation.get_site_info"
 

@@ -1,0 +1,117 @@
+{
+	"actions": [],
+	"creation": "2025-02-01 12:00:00.000000",
+	"doctype": "DocType",
+	"engine": "InnoDB",
+	"field_order": [
+		"user",
+		"device_id",
+		"column_break_info",
+		"device_name",
+		"ip_address",
+		"section_break_activity",
+		"last_active",
+		"is_current"
+	],
+	"fields": [
+		{
+			"fieldname": "user",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"in_standard_filter": 1,
+			"label": "User",
+			"options": "User",
+			"reqd": 1
+		},
+		{
+			"fieldname": "device_id",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Device ID",
+			"read_only": 1,
+			"reqd": 1
+		},
+		{
+			"fieldname": "column_break_info",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "device_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Device Name"
+		},
+		{
+			"fieldname": "ip_address",
+			"fieldtype": "Data",
+			"label": "IP Address",
+			"read_only": 1
+		},
+		{
+			"fieldname": "section_break_activity",
+			"fieldtype": "Section Break",
+			"label": "Activity"
+		},
+		{
+			"fieldname": "last_active",
+			"fieldtype": "Datetime",
+			"in_list_view": 1,
+			"label": "Last Active",
+			"read_only": 1
+		},
+		{
+			"default": "0",
+			"description": "Indicates if this is the device currently being used (computed at runtime)",
+			"fieldname": "is_current",
+			"fieldtype": "Check",
+			"hidden": 1,
+			"label": "Is Current Device",
+			"read_only": 1
+		}
+	],
+	"index_web_pages_for_search": 1,
+	"links": [],
+	"modified": "2025-02-01 12:00:00.000000",
+	"modified_by": "Administrator",
+	"module": "LMS",
+	"name": "LMS User Device",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Moderator",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"delete": 1,
+			"if_owner": 1,
+			"read": 1,
+			"role": "LMS Student"
+		}
+	],
+	"row_format": "Dynamic",
+	"sort_field": "last_active",
+	"sort_order": "DESC",
+	"states": [],
+	"title_field": "device_name",
+	"track_changes": 1
+}

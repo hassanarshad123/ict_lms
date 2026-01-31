@@ -214,7 +214,7 @@ const coverImage = createResource({
 
 const setActiveTab = () => {
 	let fragments = route.path.split('/')
-	let sections = ['certificates', 'roles', 'slots', 'schedule']
+	let sections = ['certificates', 'roles', 'slots', 'schedule', 'devices']
 	sections.forEach((section) => {
 		if (fragments.includes(section)) {
 			activeTab.value = convertToTitleCase(section)
@@ -231,6 +231,7 @@ watchEffect(() => {
 			Roles: { name: 'ProfileRoles' },
 			Slots: { name: 'ProfileEvaluator' },
 			Schedule: { name: 'ProfileEvaluationSchedule' },
+			Devices: { name: 'ProfileDevices' },
 		}[activeTab.value]
 		router.push(route)
 	}
@@ -270,6 +271,11 @@ const getTabButtons = () => {
 	if (currentUserHasHigherAccess() && isEvaluatorOrModerator()) {
 		buttons.push({ label: 'Slots' })
 		buttons.push({ label: 'Schedule' })
+	}
+
+	// Show Devices tab only for the user's own profile
+	if (isSessionUser()) {
+		buttons.push({ label: 'Devices' })
 	}
 	return buttons
 }

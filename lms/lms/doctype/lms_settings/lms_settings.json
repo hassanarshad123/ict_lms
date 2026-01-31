@@ -16,6 +16,11 @@
   "column_break_bjis",
   "unsplash_access_key",
   "livecode_url",
+  "section_break_device_limit",
+  "enable_device_limit",
+  "device_limit",
+  "column_break_device_limit",
+  "device_stale_days",
   "section_break_szgq",
   "show_day_view",
   "column_break_2",
@@ -342,6 +347,38 @@
    "label": "General"
   },
   {
+   "fieldname": "section_break_device_limit",
+   "fieldtype": "Section Break",
+   "label": "Device Limit Settings"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, users will be limited to a maximum number of simultaneous devices",
+   "fieldname": "enable_device_limit",
+   "fieldtype": "Check",
+   "label": "Enable Device Limit"
+  },
+  {
+   "default": "2",
+   "depends_on": "enable_device_limit",
+   "description": "Maximum number of devices a user can be logged in from simultaneously",
+   "fieldname": "device_limit",
+   "fieldtype": "Int",
+   "label": "Max Devices Per User"
+  },
+  {
+   "fieldname": "column_break_device_limit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "30",
+   "depends_on": "enable_device_limit",
+   "description": "Number of days after which inactive devices are automatically removed",
+   "fieldname": "device_stale_days",
+   "fieldtype": "Int",
+   "label": "Stale Device Days"
+  },
+  {
    "default": "1",
    "fieldname": "allow_guest_access",
    "fieldtype": "Check",
@@ -452,7 +489,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-12-22 11:30:13.868031",
+ "modified": "2025-02-01 12:00:00.000000",
  "modified_by": "sayali@frappe.io",
  "module": "LMS",
  "name": "LMS Settings",
