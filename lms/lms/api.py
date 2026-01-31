@@ -6444,9 +6444,16 @@ def post_reply(comment, content):
 
 
 @frappe.whitelist()
-def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplicate_action="skip"):
+def bulk_import_users_with_enrollment(file_url, send_welcome_email=True):
 	"""
 	Bulk import users from a CSV/Excel file and enroll them into batches with time limits.
+
+	For large files (50+ rows), processing happens in a background job to prevent timeouts.
+
+	Behavior:
+	- New users: Created and enrolled, welcome email sent if enabled
+	- Existing users: Enrolled in the new batch (no error)
+	- Already enrolled in same batch: Skipped silently (no error)
 
 	Each row in the file specifies: first_name, last_name, email, phone, batch_id,
 	enrolled_time, expiry_time. Passwords are auto-generated as last_name[:2].lower() + batch_suffix.
@@ -6454,14 +6461,10 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 	Args:
 		file_url (str): URL of uploaded CSV/Excel file from Frappe File Manager
 		send_welcome_email (bool): Whether to send credentials via email (default: True)
-		duplicate_action (str): How to handle existing users - "skip" or "enroll_only" (default: "skip")
 
 	Returns:
-		dict: Import summary with counts and per-row details
+		dict: Import log ID and status. Check the import log for results.
 	"""
-	from frappe.utils import escape_html
-	from frappe.utils.password import update_password
-
 	from lms.lms.bulk_import.file_parser import parse_import_file
 
 	# Permission check
@@ -6476,17 +6479,14 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 	if isinstance(send_welcome_email, str):
 		send_welcome_email = send_welcome_email.lower() in ("true", "1", "yes")
 
-	if duplicate_action not in ("skip", "enroll_only"):
-		frappe.throw(_("duplicate_action must be 'skip' or 'enroll_only'"))
-
 	# Create import log
 	import_log = frappe.new_doc("LMS Bulk Import Log")
 	import_log.file_url = file_url
-	import_log.status = "Processing"
+	import_log.status = "Queued"
 	import_log.insert(ignore_permissions=True)
 	frappe.db.commit()
 
-	# Parse and validate file
+	# Parse and validate file first (quick validation)
 	try:
 		valid_rows, parse_errors = parse_import_file(file_url)
 	except Exception as e:
@@ -6496,24 +6496,99 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 		frappe.db.commit()
 		frappe.throw(str(e))
 
+	total_rows = len(valid_rows) + len(parse_errors)
+	import_log.total_rows = total_rows
+	import_log.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	# For large imports, use background job
+	BACKGROUND_THRESHOLD = 50
+	if len(valid_rows) >= BACKGROUND_THRESHOLD:
+		frappe.enqueue(
+			"lms.lms.api._process_bulk_import_background",
+			queue="long",
+			timeout=3600,  # 1 hour timeout
+			import_log_name=import_log.name,
+			valid_rows=valid_rows,
+			parse_errors=parse_errors,
+			send_welcome_email=send_welcome_email,
+		)
+		return {
+			"success": True,
+			"import_log_id": import_log.name,
+			"status": "queued",
+			"message": f"Import of {total_rows} rows queued for background processing. Check import log for progress.",
+		}
+	else:
+		# Process small imports synchronously
+		return _process_bulk_import_sync(
+			import_log=import_log,
+			valid_rows=valid_rows,
+			parse_errors=parse_errors,
+			send_welcome_email=send_welcome_email,
+		)
+
+
+def _process_bulk_import_background(import_log_name, valid_rows, parse_errors, send_welcome_email):
+	"""Background job handler for bulk import processing."""
+	import_log = frappe.get_doc("LMS Bulk Import Log", import_log_name)
+	import_log.status = "Processing"
+	import_log.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	try:
+		_process_bulk_import_sync(
+			import_log=import_log,
+			valid_rows=valid_rows,
+			parse_errors=parse_errors,
+			send_welcome_email=send_welcome_email,
+		)
+	except Exception as e:
+		import_log.reload()
+		import_log.status = "Failed"
+		import_log.error_log = (import_log.error_log or "") + f"\nFatal error: {str(e)}"
+		import_log.save(ignore_permissions=True)
+		frappe.db.commit()
+		raise
+
+
+def _process_bulk_import_sync(import_log, valid_rows, parse_errors, send_welcome_email):
+	"""
+	Process bulk import synchronously. Used for both small imports and background jobs.
+	Processes in batches and updates progress periodically.
+	"""
+	from datetime import datetime
+
+	from frappe.utils import escape_html
+	from frappe.utils.password import update_password
+
+	import_log.status = "Processing"
+	import_log.save(ignore_permissions=True)
+	frappe.db.commit()
+
 	results = {
-		"created": [],
-		"existing_enrolled": [],
-		"failed": []
+		"created": [],          # New users created and enrolled
+		"enrolled": [],         # Existing users enrolled in new batch
+		"skipped": [],          # Already enrolled in this batch (no action needed)
+		"failed": []            # Errors
 	}
 	summary = {
 		"total_rows": len(valid_rows) + len(parse_errors),
 		"users_created": 0,
-		"users_existing": 0,
-		"users_failed": 0,
+		"users_enrolled_existing": 0,  # Existing users enrolled in new batch
+		"skipped": 0,                  # Already enrolled (no error)
+		"failed": 0,
 		"enrollments_created": 0,
-		"enrollments_failed": 0,
 	}
 
 	# Add parse errors to failed results
 	for error in parse_errors:
-		results["failed"].append({"email": "", "row": 0, "reason": error})
-		summary["users_failed"] += 1
+		results["failed"].append({"email": "Unknown", "row": 0, "reason": error})
+		summary["failed"] += 1
+
+	# Process in batches to update progress and manage memory
+	BATCH_SIZE = 25
+	PROGRESS_UPDATE_INTERVAL = 10
 
 	for idx, row in enumerate(valid_rows):
 		row_num = idx + 1
@@ -6527,31 +6602,24 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 		password = row["password"]
 
 		try:
+			# Step 1: Check if already enrolled in this batch - skip if so
+			existing_enrollment = frappe.db.exists(
+				"LMS Batch Enrollment", {"batch": batch_id, "member": email}
+			)
+			if existing_enrollment:
+				results["skipped"].append({
+					"email": email,
+					"batch": batch_id,
+					"reason": "Already enrolled in this batch"
+				})
+				summary["skipped"] += 1
+				continue
+
+			# Step 2: Create user if doesn't exist
 			user_exists = frappe.db.exists("User", email)
+			user_created = False
 
-			if user_exists:
-				if duplicate_action == "skip":
-					# Check if already enrolled in this batch
-					existing_enrollment = frappe.db.exists(
-						"LMS Batch Enrollment", {"batch": batch_id, "member": email}
-					)
-					if existing_enrollment:
-						results["existing_enrolled"].append({
-							"email": email,
-							"batch": batch_id,
-							"reason": "User already enrolled in this batch"
-						})
-						summary["users_existing"] += 1
-						continue
-
-					# Skip user creation but proceed to enrollment
-					summary["users_existing"] += 1
-
-				elif duplicate_action == "enroll_only":
-					summary["users_existing"] += 1
-				# Fall through to enrollment
-			else:
-				# Create new user following api_sign_up pattern
+			if not user_exists:
 				full_name = f"{first_name} {last_name}"
 				user = frappe.get_doc({
 					"doctype": "User",
@@ -6561,12 +6629,16 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 					"full_name": escape_html(full_name),
 					"phone": phone,
 					"enabled": 1,
-					"send_welcome_email": 0,  # We handle email ourselves
+					"send_welcome_email": 0,
 					"user_type": "Website User",
 				})
 				user.flags.ignore_permissions = True
 				user.flags.ignore_password_policy = True
+				user.flags.no_welcome_mail = True
+				user.flags.delay_emails = True
+				user.flags.ignore_contact_creation = True
 				user.insert()
+				frappe.db.commit()
 
 				# Set password
 				update_password(user.name, password)
@@ -6577,31 +6649,10 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 					user.add_roles(default_role)
 				user.add_roles("LMS Student")
 
+				user_created = True
 				summary["users_created"] += 1
-				results["created"].append({
-					"email": email,
-					"batch": batch_id,
-					"password": password,
-				})
 
-			# Create enrollment (for both new and existing users)
-			existing_enrollment = frappe.db.exists(
-				"LMS Batch Enrollment", {"batch": batch_id, "member": email}
-			)
-			if existing_enrollment:
-				if not user_exists:
-					# New user but already enrolled (shouldn't happen, but handle gracefully)
-					pass
-				else:
-					results["existing_enrolled"].append({
-						"email": email,
-						"batch": batch_id,
-						"reason": "Already enrolled"
-					})
-				continue
-
-			# Calculate duration in days
-			from datetime import datetime
+			# Step 3: Create enrollment
 			start_date = datetime.strptime(enrolled_time, "%Y-%m-%d").date()
 			end_date = datetime.strptime(expiry_time, "%Y-%m-%d").date()
 			duration_days = (end_date - start_date).days
@@ -6620,36 +6671,67 @@ def bulk_import_users_with_enrollment(file_url, send_welcome_email=True, duplica
 			enrollment.flags.ignore_permissions = True
 			enrollment.insert()
 			summary["enrollments_created"] += 1
+			frappe.db.commit()
 
-			# Send welcome email
-			if send_welcome_email and not user_exists:
-				_send_bulk_import_welcome_email(
-					email=email,
-					first_name=first_name,
-					last_name=last_name,
-					password=password,
-					batch_id=batch_id,
-					enrolled_time=enrolled_time,
-					expiry_time=expiry_time,
-				)
+			# Track result
+			if user_created:
+				results["created"].append({
+					"email": email,
+					"batch": batch_id,
+					"password": password,
+				})
+				# Queue welcome email for new users only
+				if send_welcome_email:
+					frappe.enqueue(
+						"lms.lms.api._send_bulk_import_welcome_email",
+						queue="short",
+						email=email,
+						first_name=first_name,
+						last_name=last_name,
+						password=password,
+						batch_id=batch_id,
+						enrolled_time=enrolled_time,
+						expiry_time=expiry_time,
+					)
+			else:
+				results["enrolled"].append({
+					"email": email,
+					"batch": batch_id,
+					"reason": "Existing user enrolled in new batch"
+				})
+				summary["users_enrolled_existing"] += 1
 
 		except Exception as e:
+			frappe.db.rollback()
 			results["failed"].append({
 				"email": email,
 				"row": row_num,
 				"reason": str(e),
 			})
-			summary["users_failed"] += 1
-			summary["enrollments_failed"] += 1
+			summary["failed"] += 1
 
-	# Update import log
+		# Update progress periodically
+		if row_num % PROGRESS_UPDATE_INTERVAL == 0:
+			import_log.reload()
+			import_log.users_created = summary["users_created"]
+			import_log.users_failed = summary["failed"]
+			import_log.enrollments_created = summary["enrollments_created"]
+			import_log.enrollments_failed = 0  # We don't track this separately anymore
+			import_log.save(ignore_permissions=True)
+			frappe.db.commit()
+
+		# Clear cache periodically to manage memory
+		if row_num % BATCH_SIZE == 0:
+			frappe.local.cache = {}
+
+	# Final update to import log
 	import_log.reload()
 	import_log.status = "Completed"
 	import_log.total_rows = summary["total_rows"]
 	import_log.users_created = summary["users_created"]
-	import_log.users_failed = summary["users_failed"]
+	import_log.users_failed = summary["failed"]
 	import_log.enrollments_created = summary["enrollments_created"]
-	import_log.enrollments_failed = summary["enrollments_failed"]
+	import_log.enrollments_failed = 0
 	import_log.details_json = json.dumps(results, default=str)
 	if parse_errors:
 		import_log.error_log = "\n".join(parse_errors)
