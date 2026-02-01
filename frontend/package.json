@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "serve": "vite preview",
-    "build": "vite build --base=/assets/lms/frontend/ && yarn copy-html-entry && yarn copy-colors-json",
-    "copy-html-entry": "node -e \"const fs=require('fs');const path=require('path');const dest='../lms/www/lms.html';fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync('../lms/public/frontend/index.html',dest);\"",
-    "copy-colors-json": "node -e \"const fs=require('fs');const p='node_modules/frappe-ui/src/tailwind/colors.json';if(fs.existsSync(p))fs.copyFileSync(p,'src/utils/frappe-ui-colors.json');\""
+    "build": "vite build --base=/assets/lms/frontend/ && node scripts/postbuild.cjs",
+    "copy-html-entry": "node scripts/postbuild.cjs",
+    "copy-colors-json": "node scripts/postbuild.cjs"
   },
   "dependencies": {
     "@codemirror/lang-html": "6.4.9",

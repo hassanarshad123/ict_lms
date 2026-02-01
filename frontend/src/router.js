@@ -90,6 +90,11 @@ const routes = [
 				component: () => import('@/pages/ProfileRoles.vue'),
 			},
 			{
+				name: 'ProfileDevices',
+				path: 'devices',
+				component: () => import('@/pages/ProfileDevices.vue'),
+			},
+			{
 				name: 'ProfileEvaluator',
 				path: 'slots',
 				component: () => import('@/pages/ProfileEvaluator.vue'),
@@ -99,11 +104,6 @@ const routes = [
 				path: 'schedule',
 				component: () =>
 					import('@/pages/ProfileEvaluationSchedule.vue'),
-			},
-			{
-				name: 'ProfileDevices',
-				path: 'devices',
-				component: () => import('@/pages/ProfileDevices.vue'),
 			},
 		],
 	},

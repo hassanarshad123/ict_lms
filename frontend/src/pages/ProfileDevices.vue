@@ -1,84 +1,67 @@
 <template>
-	<div class="mt-7 mb-10">
-		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold text-ink-gray-9">
-				{{ __('Logged In Devices') }}
-			</h2>
-			<div
-				v-if="devices.data?.device_limit_enabled"
-				class="text-sm text-ink-gray-7"
-			>
-				{{ devices.data?.current_count }} / {{ devices.data?.max_devices }}
-				{{ __('devices') }}
-			</div>
+	<div class="mt-7">
+		<h2 class="mb-3 text-lg font-semibold text-ink-gray-9">
+			{{ __('Active Devices') }}
+		</h2>
+		<div
+			v-if="devices.loading"
+			class="flex items-center justify-center py-8"
+		>
+			<Spinner class="w-5 h-5" />
 		</div>
-
-		<div v-if="devices.loading" class="flex justify-center py-8">
-			<Spinner class="w-6 h-6 text-ink-gray-5" />
+		<div v-else-if="!devices.data?.devices?.length" class="text-sm text-ink-gray-5">
+			{{ __('No active devices found.') }}
 		</div>
-
-		<div v-else-if="!devices.data?.device_limit_enabled" class="text-ink-gray-7 text-sm italic">
-			{{ __('Device tracking is not enabled.') }}
-		</div>
-
-		<div v-else-if="devices.data?.devices?.length === 0" class="text-ink-gray-7 text-sm italic">
-			{{ __('No devices registered.') }}
-		</div>
-
 		<div v-else class="space-y-3">
 			<div
-				v-for="device in devices.data?.devices"
-				:key="device.device_id"
-				class="flex items-center justify-between p-4 bg-surface-gray-1 rounded-lg border"
-				:class="device.is_current ? 'border-blue-300 bg-blue-50' : 'border-outline-gray-2'"
+				v-if="devices.data?.device_limit_enabled"
+				class="text-xs text-ink-gray-5 mb-2"
 			>
-				<div class="flex items-center space-x-4">
-					<div class="p-2 bg-surface-white rounded-lg">
-						<Monitor v-if="isDesktop(device.device_name)" class="w-6 h-6 text-ink-gray-7" />
-						<Smartphone v-else-if="isMobile(device.device_name)" class="w-6 h-6 text-ink-gray-7" />
-						<Laptop v-else class="w-6 h-6 text-ink-gray-7" />
-					</div>
+				{{ __('Using') }} {{ devices.data.current_count }} {{ __('of') }} {{ devices.data.max_devices }} {{ __('allowed devices') }}
+			</div>
+			<div
+				v-for="device in devices.data.devices"
+				:key="device.device_id"
+				class="p-4 border rounded-lg flex items-center justify-between"
+			>
+				<div class="flex items-center space-x-3">
+					<Monitor class="w-5 h-5 text-ink-gray-5" />
 					<div>
-						<div class="flex items-center space-x-2">
-							<span class="font-medium text-ink-gray-9">
-								{{ device.device_name || __('Unknown Device') }}
-							</span>
-							<Badge
-								v-if="device.is_current"
-								variant="success"
-								size="sm"
-								:label="__('Current')"
-							/>
+						<div class="text-sm font-medium text-ink-gray-9">
+							{{ device.device_name || __('Unknown Device') }}
 						</div>
-						<div class="text-sm text-ink-gray-7 mt-1">
-							<span v-if="device.ip_address">
-								{{ __('IP') }}: {{ device.ip_address }}
-							</span>
-							<span v-if="device.ip_address && device.last_active" class="mx-2">|</span>
-							<span v-if="device.last_active">
-								{{ __('Last active') }}: {{ timeAgo(device.last_active) }}
-							</span>
+						<div class="text-xs text-ink-gray-5 mt-0.5">
+							{{ __('Last active') }}: {{ formatDate(device.last_active) }}
+						</div>
+						<div v-if="device.ip_address" class="text-xs text-ink-gray-4 mt-0.5">
+							IP: {{ device.ip_address }}
 						</div>
 					</div>
 				</div>
+				<Badge
+					v-if="device.is_current"
+					variant="subtle"
+					theme="green"
+					size="sm"
+				>
+					{{ __('Current') }}
+				</Badge>
 			</div>
 		</div>
-
-		<div v-if="devices.data?.device_limit_enabled" class="mt-6 p-4 bg-surface-gray-1 rounded-lg">
-			<h3 class="text-sm font-medium text-ink-gray-9 mb-2">
-				{{ __('About Device Limits') }}
-			</h3>
-			<p class="text-sm text-ink-gray-7">
-				{{ __('You can be logged in from up to {0} devices simultaneously. If you reach this limit, please contact your administrator to reset your device access.').format(devices.data?.max_devices) }}
-			</p>
-		</div>
+		<p class="text-xs text-ink-gray-5 mt-4">
+			{{ __('Contact an administrator if you need to remove a device.') }}
+		</p>
 	</div>
 </template>
 
 <script setup>
-import { createResource, Badge, Spinner } from 'frappe-ui'
-import { Monitor, Smartphone, Laptop } from 'lucide-vue-next'
-import { timeAgo } from '@/utils'
+import { createResource, Spinner, Badge } from 'frappe-ui'
+import { watch } from 'vue'
+import { Monitor } from 'lucide-vue-next'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+
+dayjs.extend(relativeTime)
 
 const props = defineProps({
 	profile: {
@@ -89,16 +72,21 @@ const props = defineProps({
 
 const devices = createResource({
 	url: 'lms.lms.api.get_my_devices',
-	auto: true,
+	auto: false,
 })
 
-const isDesktop = (deviceName) => {
-	if (!deviceName) return false
-	return deviceName.includes('Windows') || deviceName.includes('Linux') || deviceName.includes('macOS')
-}
+watch(
+	() => props.profile,
+	(newValue) => {
+		if (newValue?.data?.name) {
+			devices.reload()
+		}
+	},
+	{ immediate: true }
+)
 
-const isMobile = (deviceName) => {
-	if (!deviceName) return false
-	return deviceName.includes('Android') || deviceName.includes('iOS')
+const formatDate = (date) => {
+	if (!date) return __('Never')
+	return dayjs(date).fromNow()
 }
 </script>

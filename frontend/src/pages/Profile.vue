@@ -214,7 +214,7 @@ const coverImage = createResource({
 
 const setActiveTab = () => {
 	let fragments = route.path.split('/')
-	let sections = ['certificates', 'roles', 'slots', 'schedule', 'devices']
+	let sections = ['certificates', 'roles', 'devices', 'slots', 'schedule']
 	sections.forEach((section) => {
 		if (fragments.includes(section)) {
 			activeTab.value = convertToTitleCase(section)
@@ -229,9 +229,9 @@ watchEffect(() => {
 			About: { name: 'ProfileAbout' },
 			Certificates: { name: 'ProfileCertificates' },
 			Roles: { name: 'ProfileRoles' },
+			Devices: { name: 'ProfileDevices' },
 			Slots: { name: 'ProfileEvaluator' },
 			Schedule: { name: 'ProfileEvaluationSchedule' },
-			Devices: { name: 'ProfileDevices' },
 		}[activeTab.value]
 		router.push(route)
 	}
@@ -267,15 +267,12 @@ const getTabButtons = () => {
 	let buttons = [{ label: 'About' }, { label: 'Certificates' }]
 	// Only Admin can manage roles
 	if ($user.data?.is_admin) buttons.push({ label: 'Roles' })
+	// Users can view their own devices
+	if (isSessionUser()) buttons.push({ label: 'Devices' })
 
 	if (currentUserHasHigherAccess() && isEvaluatorOrModerator()) {
 		buttons.push({ label: 'Slots' })
 		buttons.push({ label: 'Schedule' })
-	}
-
-	// Show Devices tab only for the user's own profile
-	if (isSessionUser()) {
-		buttons.push({ label: 'Devices' })
 	}
 	return buttons
 }

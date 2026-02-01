@@ -60,53 +60,17 @@
 				</div>
 			</div>
 		</div>
-
-		<!-- Device Management Section -->
-		<div class="mt-8">
-			<h2 class="mb-3 text-lg font-semibold text-ink-gray-9">
-				{{ __('Device Management') }}
-			</h2>
-			<div class="p-4 border rounded-lg">
-				<div class="flex items-center justify-between">
-					<div>
-						<p class="text-sm font-medium text-ink-gray-9">
-							{{ __('Logged In Devices') }}
-						</p>
-						<p class="text-xs text-ink-gray-5 mt-1">
-							{{ __('View and manage devices this user is logged in from') }}
-						</p>
-					</div>
-					<Button
-						variant="outline"
-						size="sm"
-						@click="showDevicesModal = true"
-					>
-						<template #prefix>
-							<Monitor class="w-4 h-4" />
-						</template>
-						{{ __('Manage Devices') }}
-					</Button>
-				</div>
-			</div>
-		</div>
 	</div>
-
-	<UserDevicesModal
-		v-model="showDevicesModal"
-		:user="props.profile.data?.name"
-	/>
 </template>
 <script setup>
-import { FormControl, createResource, toast, Button } from 'frappe-ui'
+import { FormControl, createResource, toast } from 'frappe-ui'
 import { ref, watch } from 'vue'
-import { CircleAlert, Monitor } from 'lucide-vue-next'
-import UserDevicesModal from '@/components/Modals/UserDevicesModal.vue'
+import { CircleAlert } from 'lucide-vue-next'
 
 const admin = ref(false)
 const course_creator = ref(false)
 const teacher = ref(false)
 const student = ref(false)
-const showDevicesModal = ref(false)
 const readOnlyMode = window.read_only_mode
 
 const props = defineProps({
