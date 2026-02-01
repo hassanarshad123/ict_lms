@@ -356,8 +356,8 @@ def cleanup_stale_devices():
 
 def on_user_login(login_manager):
 	"""
-	Hook called on user login. Checks device limit and registers the device.
-	If device limit is exceeded, logs the user out immediately.
+	Hook called on user login. Registers the device for tracking.
+	Device limit validation is done in before_request hook.
 
 	Args:
 		login_manager: Frappe login manager
@@ -377,24 +377,86 @@ def on_user_login(login_manager):
 		if not device_id:
 			return
 
-		# Check device limit BEFORE registering
-		can_login, message = check_device_limit(user, device_id)
-
-		if not can_login:
-			# Log the user out immediately
-			frappe.local.login_manager.logout()
-			frappe.db.commit()
-			frappe.throw(message, frappe.AuthenticationError)
-
-		# Device limit check passed, register the device
+		# Register the device (or update last_active if already registered)
 		register_device(user, device_id)
 		frappe.db.commit()
+	except Exception:
+		# Log error but don't block login
+		frappe.log_error("Device registration failed on login")
+
+
+def validate_device_access():
+	"""
+	Before request hook to validate device access.
+	If user exceeds device limit and is on an unregistered device, force logout.
+	"""
+	# Skip for guest users
+	if frappe.session.user == "Guest":
+		return
+
+	# Skip for certain paths (login, logout, api auth endpoints)
+	if frappe.request:
+		path = frappe.request.path or ""
+		skip_paths = ["/api/method/login", "/api/method/logout", "/login", "/logout"]
+		if any(path.startswith(p) or path == p for p in skip_paths):
+			return
+
+	settings = get_device_limit_settings()
+
+	if not settings["enabled"]:
+		return
+
+	user = frappe.session.user
+
+	# Admins are exempt from device limit
+	user_roles = frappe.get_roles(user)
+	if "Moderator" in user_roles or "System Manager" in user_roles:
+		return
+
+	try:
+		device_id = get_device_id()
+		if not device_id:
+			return
+
+		# Check if this device is registered for the user
+		existing_device = frappe.db.exists(
+			"LMS User Device",
+			{"user": user, "device_id": device_id}
+		)
+
+		if existing_device:
+			# Device is registered, update last active and allow access
+			frappe.db.set_value(
+				"LMS User Device",
+				existing_device,
+				"last_active",
+				now_datetime(),
+				update_modified=False
+			)
+			return
+
+		# Device is NOT registered - check if user can add more devices
+		device_count = frappe.db.count("LMS User Device", {"user": user})
+
+		if device_count >= settings["limit"]:
+			# User has reached device limit and this is a new device
+			# Force logout
+			frappe.local.login_manager.logout()
+			frappe.db.commit()
+			frappe.throw(
+				_("You have reached the maximum number of devices ({0}). Please contact the administrator to reset your device access.").format(settings["limit"]),
+				frappe.AuthenticationError
+			)
+
+		# Under limit - register this new device
+		register_device(user, device_id)
+		frappe.db.commit()
+
 	except frappe.AuthenticationError:
-		# Re-raise authentication errors (device limit exceeded)
 		raise
 	except Exception:
-		# Log other errors but don't block login
-		frappe.log_error("Device registration failed on login")
+		# Log error but don't block the request
+		frappe.log_error("Device validation failed")
 
 
 def update_device_activity(user):

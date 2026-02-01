@@ -93,8 +93,6 @@ def api_login(usr, pwd):
 	"""
 	from frappe.utils.password import check_password as validate_password
 
-	from lms.lms.device_limit import check_device_limit, register_device
-
 	# Validate required fields
 	if not usr:
 		frappe.throw(_("Email or username is required"))
@@ -113,18 +111,6 @@ def api_login(usr, pwd):
 	# Check if user is enabled
 	if not user_doc.enabled:
 		frappe.throw(_("Your account has been disabled"), frappe.AuthenticationError)
-
-	# Check device limit before allowing login
-	can_login, message = check_device_limit(user)
-	if not can_login:
-		frappe.throw(message, frappe.AuthenticationError)
-
-	# Register device on successful login
-	try:
-		register_device(user)
-	except Exception:
-		# Log error but don't block login (graceful degradation)
-		frappe.log_error("Device registration failed during API login")
 
 	# Generate API secret (regenerated each login for security)
 	api_secret = frappe.generate_hash(length=15)

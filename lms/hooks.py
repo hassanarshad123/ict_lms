@@ -265,6 +265,10 @@ on_login = [
 	"lms.lms.device_limit.on_user_login",
 ]
 
+before_request = [
+	"lms.lms.device_limit.validate_device_access",
+]
+
 get_site_info = "lms.activation.get_site_info"
 
 add_to_apps_screen = [
