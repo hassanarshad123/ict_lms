@@ -128,11 +128,15 @@ def get_device_limit_settings():
 	Returns:
 		dict: Settings with keys: enabled, limit, stale_days
 	"""
-	settings = frappe.get_cached_doc("LMS Settings")
+	# Use get_single_value to avoid caching issues
+	enabled = frappe.db.get_single_value("LMS Settings", "enable_device_limit") or 0
+	limit = frappe.db.get_single_value("LMS Settings", "device_limit") or 2
+	stale_days = frappe.db.get_single_value("LMS Settings", "device_stale_days") or 30
+
 	return {
-		"enabled": settings.enable_device_limit,
-		"limit": settings.device_limit or 2,
-		"stale_days": settings.device_stale_days or 30,
+		"enabled": enabled,
+		"limit": limit,
+		"stale_days": stale_days,
 	}
 
 
@@ -352,8 +356,8 @@ def cleanup_stale_devices():
 
 def on_user_login(login_manager):
 	"""
-	Hook called on user login. Registers the device if device limit is enabled.
-	Does NOT block login - that should be done in the API login endpoint.
+	Hook called on user login. Checks device limit and registers the device.
+	If device limit is exceeded, logs the user out immediately.
 
 	Args:
 		login_manager: Frappe login manager
@@ -370,11 +374,26 @@ def on_user_login(login_manager):
 
 	try:
 		device_id = get_device_id()
-		if device_id:
-			register_device(user, device_id)
+		if not device_id:
+			return
+
+		# Check device limit BEFORE registering
+		can_login, message = check_device_limit(user, device_id)
+
+		if not can_login:
+			# Log the user out immediately
+			frappe.local.login_manager.logout()
 			frappe.db.commit()
+			frappe.throw(message, frappe.AuthenticationError)
+
+		# Device limit check passed, register the device
+		register_device(user, device_id)
+		frappe.db.commit()
+	except frappe.AuthenticationError:
+		# Re-raise authentication errors (device limit exceeded)
+		raise
 	except Exception:
-		# Log error but don't block login
+		# Log other errors but don't block login
 		frappe.log_error("Device registration failed on login")
 
 
