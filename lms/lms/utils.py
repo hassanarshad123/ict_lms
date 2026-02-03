@@ -230,6 +230,7 @@ def get_instructors(doctype, docname):
 		{"parent": docname, "parenttype": doctype},
 		order_by="idx",
 		pluck="instructor",
+		limit_page_length=100000,
 	)
 
 	for instructor in instructors:
@@ -1210,7 +1211,8 @@ def get_batch_details(batch):
 		"LMS Batch Enrollment",
 		{"batch": batch, "status": ["in", ["Active", "Extended"]]},
 		pluck="member",
-		ignore_permissions=True
+		ignore_permissions=True,
+		limit_page_length=100000,
 	)
 	# Check if user is an instructor on this batch (for teachers)
 	is_batch_instructor = frappe.db.exists(
@@ -1265,7 +1267,8 @@ def get_batch_details(batch):
 		batch_details.accept_enrollments = True
 
 	batch_details.courses = frappe.get_all(
-		"Batch Course", filters={"parent": batch}, fields=["course", "title", "evaluator"]
+		"Batch Course", filters={"parent": batch}, fields=["course", "title", "evaluator"],
+		limit_page_length=100000,
 	)
 	batch_details.students = batch_students
 
@@ -1476,7 +1479,8 @@ def get_batch_students(batch):
 		"LMS Batch Enrollment",
 		filters={"batch": batch, "status": ["in", ["Active", "Extended"]]},
 		fields=["member", "name"],
-		ignore_permissions=True
+		ignore_permissions=True,
+		limit_page_length=100000,
 	)
 
 	for student in students_list:
@@ -2111,7 +2115,8 @@ def get_batches(filters=None, start=0, order_by="start_date"):
 		enrolled_batches = frappe.get_all(
 			"LMS Batch Enrollment",
 			{"member": frappe.session.user, "status": ["in", ["Active", "Extended"]]},
-			pluck="batch"
+			pluck="batch",
+			limit_page_length=100000,
 		)
 		filters.update({"name": ["in", enrolled_batches]})
 		del filters["enrolled"]
@@ -2121,7 +2126,8 @@ def get_batches(filters=None, start=0, order_by="start_date"):
 		assigned_batches = frappe.get_all(
 			"Course Instructor",
 			{"instructor": frappe.session.user, "parenttype": "LMS Batch"},
-			pluck="parent"
+			pluck="parent",
+			limit_page_length=100000,
 		)
 		filters.update({"name": ["in", assigned_batches]})
 		del filters["assigned"]

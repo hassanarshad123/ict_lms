@@ -7145,18 +7145,30 @@ def get_all_batches(filters=None, page_length=0):
 			"modified",
 		],
 		order_by="creation desc",
-		limit_page_length=page_length if page_length > 0 else 0,
+		limit_page_length=page_length if page_length > 0 else 100000,
 		ignore_permissions=True,
 	)
 
 	for batch in batches:
 		# Get instructors
-		batch.instructors = frappe.get_all(
+		instructor_list = frappe.get_all(
 			"Course Instructor",
 			filters={"parent": batch.name, "parenttype": "LMS Batch"},
-			fields=["instructor", "instructor_name"],
+			fields=["instructor"],
 			ignore_permissions=True,
+			limit_page_length=100000,
 		)
+		# Get instructor details from User
+		batch.instructors = []
+		for inst in instructor_list:
+			user_info = frappe.db.get_value(
+				"User",
+				inst.instructor,
+				["name", "full_name", "email", "user_image"],
+				as_dict=True,
+			)
+			if user_info:
+				batch.instructors.append(user_info)
 
 		# Get courses in batch
 		batch.courses = frappe.get_all(
@@ -7164,13 +7176,19 @@ def get_all_batches(filters=None, page_length=0):
 			filters={"parent": batch.name},
 			fields=["course", "title", "evaluator"],
 			ignore_permissions=True,
+			limit_page_length=100000,
 		)
 
-		# Count active enrollments
-		batch.student_count = frappe.db.count(
+		# Get all students enrolled in batch
+		batch.students = frappe.get_all(
 			"LMS Batch Enrollment",
-			{"batch": batch.name, "status": ["in", ["Active", "Extended"]]}
+			filters={"batch": batch.name, "status": ["in", ["Active", "Extended"]]},
+			fields=["member", "name", "creation"],
+			ignore_permissions=True,
+			limit_page_length=100000,
 		)
+
+		batch.student_count = len(batch.students)
 
 		# Calculate seats left (None if no seat limit)
 		batch.seats_left = None
@@ -7178,3 +7196,80 @@ def get_all_batches(filters=None, page_length=0):
 			batch.seats_left = cint(batch.seat_count) - batch.student_count
 
 	return batches
+
+
+@frappe.whitelist()
+def get_all_batch_enrollments(batch=None, filters=None, page_length=0):
+	"""
+	Get all batch enrollments with student details.
+	Only accessible to Moderator and Course Creator roles.
+
+	Args:
+		batch (str): Optional batch name to filter by specific batch
+		filters (dict): Optional additional filters to apply
+		page_length (int): Number of records to return (0 = all)
+
+	Returns:
+		list: List of all batch enrollments with student details
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to access batch enrollments."), frappe.PermissionError)
+
+	if filters and isinstance(filters, str):
+		filters = frappe.parse_json(filters)
+
+	if not filters:
+		filters = {}
+
+	# Add batch filter if provided
+	if batch:
+		filters["batch"] = batch
+
+	page_length = cint(page_length)
+
+	enrollments = frappe.get_all(
+		"LMS Batch Enrollment",
+		filters=filters,
+		fields=[
+			"name",
+			"member",
+			"batch",
+			"status",
+			"creation",
+			"modified",
+			"member_name",
+		],
+		order_by="creation desc",
+		limit_page_length=page_length if page_length > 0 else 100000,
+		ignore_permissions=True,
+	)
+
+	for enrollment in enrollments:
+		# Get student/user details
+		user_details = frappe.db.get_value(
+			"User",
+			enrollment.member,
+			["full_name", "email", "username", "user_image", "mobile_no", "last_active"],
+			as_dict=True,
+		)
+		if user_details:
+			enrollment.full_name = user_details.full_name
+			enrollment.email = user_details.email
+			enrollment.username = user_details.username
+			enrollment.user_image = user_details.user_image
+			enrollment.mobile_no = user_details.mobile_no
+			enrollment.last_active = user_details.last_active
+
+		# Get batch details
+		batch_details = frappe.db.get_value(
+			"LMS Batch",
+			enrollment.batch,
+			["title", "start_date", "end_date"],
+			as_dict=True,
+		)
+		if batch_details:
+			enrollment.batch_title = batch_details.title
+			enrollment.batch_start_date = batch_details.start_date
+			enrollment.batch_end_date = batch_details.end_date
+
+	return enrollments
