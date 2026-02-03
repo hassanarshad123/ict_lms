@@ -7092,3 +7092,89 @@ def get_device_limit_settings():
 		"enabled": settings["enabled"],
 		"max_devices": settings["limit"],
 	}
+
+
+@frappe.whitelist()
+def get_all_batches(filters=None, page_length=0):
+	"""
+	Get all batches with full details.
+	Only accessible to Moderator and Course Creator roles.
+
+	Args:
+		filters (dict): Optional filters to apply
+		page_length (int): Number of records to return (0 = all)
+
+	Returns:
+		list: List of all batches with details
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to access all batches."), frappe.PermissionError)
+
+	if filters and isinstance(filters, str):
+		filters = frappe.parse_json(filters)
+
+	if not filters:
+		filters = {}
+
+	page_length = cint(page_length)
+
+	batches = frappe.get_all(
+		"LMS Batch",
+		filters=filters,
+		fields=[
+			"name",
+			"title",
+			"description",
+			"batch_details",
+			"seat_count",
+			"paid_batch",
+			"amount",
+			"amount_usd",
+			"currency",
+			"start_date",
+			"end_date",
+			"start_time",
+			"end_time",
+			"timezone",
+			"published",
+			"category",
+			"evaluation_end_date",
+			"allow_self_enrollment",
+			"certification",
+			"creation",
+			"modified",
+		],
+		order_by="creation desc",
+		limit_page_length=page_length if page_length > 0 else 0,
+		ignore_permissions=True,
+	)
+
+	for batch in batches:
+		# Get instructors
+		batch.instructors = frappe.get_all(
+			"Course Instructor",
+			filters={"parent": batch.name, "parenttype": "LMS Batch"},
+			fields=["instructor", "instructor_name"],
+			ignore_permissions=True,
+		)
+
+		# Get courses in batch
+		batch.courses = frappe.get_all(
+			"Batch Course",
+			filters={"parent": batch.name},
+			fields=["course", "title", "evaluator"],
+			ignore_permissions=True,
+		)
+
+		# Count active enrollments
+		batch.student_count = frappe.db.count(
+			"LMS Batch Enrollment",
+			{"batch": batch.name, "status": ["in", ["Active", "Extended"]]}
+		)
+
+		# Calculate seats left (None if no seat limit)
+		batch.seats_left = None
+		if batch.seat_count:
+			batch.seats_left = cint(batch.seat_count) - batch.student_count
+
+	return batches
