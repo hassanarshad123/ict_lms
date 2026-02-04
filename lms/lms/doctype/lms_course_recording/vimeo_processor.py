@@ -710,8 +710,8 @@ def apply_vimeo_privacy(video_id):
     Apply privacy settings to the Vimeo video.
 
     Settings applied:
-    - privacy.view: "disable" (not publicly discoverable)
-    - privacy.embed: "whitelist" (only whitelisted domains)
+    - privacy.view: "disable" (hidden from Vimeo, only viewable via embed)
+    - privacy.embed: "public" (embeddable on any domain without sign-in)
     - privacy.download: false
     - privacy.add: false
     - privacy.comments: "nobody"
@@ -730,10 +730,12 @@ def apply_vimeo_privacy(video_id):
     }
 
     # Apply privacy settings
+    # "disable" = Hide from Vimeo (only viewable via embed, not on vimeo.com)
+    # "public" embed = can be embedded on any domain (no sign-in required)
     privacy_payload = {
         "privacy": {
             "view": "disable",
-            "embed": "whitelist",
+            "embed": "public",
             "download": False,
             "add": False,
             "comments": "nobody",
@@ -755,19 +757,12 @@ def apply_vimeo_privacy(video_id):
             )
             return False
 
-        # Add whitelist domains
-        embed_whitelist = settings.embed_whitelist or ""
-        domains = [d.strip() for d in embed_whitelist.split(",") if d.strip()]
-
-        for domain in domains:
-            add_embed_domain(video_id, domain, headers)
-
         # Update recording with final privacy status
         frappe.db.set_value(
             "LMS Course Recording",
             {"vimeo_video_id": video_id},
             "vimeo_privacy_status",
-            "whitelist",
+            "unlisted",
         )
 
         return True
@@ -919,6 +914,113 @@ def poll_vimeo_folder():
             f"Vimeo folder poll failed: {str(e)}",
             "Vimeo Poll Error"
         )
+
+
+def fix_vimeo_privacy_settings():
+    """
+    Fix privacy settings for all existing Vimeo recordings.
+
+    Applies:
+    - privacy.view: "disable" (hidden from Vimeo)
+    - privacy.embed: "public" (embeddable anywhere without sign-in)
+
+    Returns a summary of what was fixed.
+    """
+    frappe.logger().info("Starting fix_vimeo_privacy_settings...")
+
+    results = {
+        "total_recordings": 0,
+        "fixed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "details": []
+    }
+
+    # Get all recordings with vimeo video ID
+    recordings = frappe.get_all(
+        "LMS Course Recording",
+        filters={
+            "vimeo_video_id": ["is", "set"],
+            "status": "Uploaded"
+        },
+        fields=["name", "vimeo_video_id", "vimeo_privacy_status"],
+        order_by="creation asc"
+    )
+
+    results["total_recordings"] = len(recordings)
+    frappe.logger().info(f"Found {len(recordings)} recordings to check")
+
+    settings = frappe.get_single("LMS Vimeo Settings")
+    access_token = settings.get_password("access_token")
+
+    if not access_token:
+        frappe.log_error("Cannot fix privacy: Vimeo access token not configured")
+        return {"error": "Vimeo access token not configured"}
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/vnd.vimeo.*+json;version=3.4",
+        "Content-Type": "application/json",
+    }
+
+    for recording in recordings:
+        try:
+            video_id = recording.vimeo_video_id
+
+            # Apply "Hide from Vimeo" privacy setting (embeddable anywhere)
+            privacy_payload = {
+                "privacy": {
+                    "view": "disable",
+                    "embed": "public",
+                    "download": False,
+                    "add": False,
+                    "comments": "nobody",
+                }
+            }
+
+            response = requests.patch(
+                f"https://api.vimeo.com/videos/{video_id}",
+                headers=headers,
+                json=privacy_payload,
+                timeout=30,
+            )
+
+            if response.status_code in [200, 204]:
+                # Update recording status
+                frappe.db.set_value("LMS Course Recording", recording.name, "vimeo_privacy_status", "unlisted")
+
+                results["fixed"] += 1
+                results["details"].append({
+                    "recording": recording.name,
+                    "video_id": video_id,
+                    "status": "fixed"
+                })
+                frappe.logger().info(f"Fixed privacy for {recording.name}")
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "recording": recording.name,
+                    "video_id": video_id,
+                    "status": "failed",
+                    "reason": f"API error: {response.status_code}"
+                })
+
+        except Exception as e:
+            results["failed"] += 1
+            results["details"].append({
+                "recording": recording.name,
+                "status": "error",
+                "reason": str(e)
+            })
+            frappe.log_error(
+                f"Failed to fix privacy for {recording.name}: {str(e)}",
+                "Fix Vimeo Privacy Error"
+            )
+
+    frappe.db.commit()
+    frappe.logger().info(f"fix_vimeo_privacy_settings completed: {results['fixed']} fixed, {results['failed']} failed")
+
+    return results
 
 
 def fix_missing_recording_lessons():

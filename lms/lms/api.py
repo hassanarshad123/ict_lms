@@ -7430,6 +7430,25 @@ def diagnose_recording_lesson(recording_name):
 
 
 @frappe.whitelist()
+def fix_vimeo_privacy():
+	"""
+	Fix Vimeo privacy settings for all recordings.
+
+	Changes privacy.view from "disable" to "unlisted" so videos
+	can be viewed without Vimeo sign-in.
+
+	Returns:
+		dict with summary of what was fixed
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to run this fix."), frappe.PermissionError)
+
+	from lms.lms.doctype.lms_course_recording.vimeo_processor import fix_vimeo_privacy_settings
+
+	return fix_vimeo_privacy_settings()
+
+
+@frappe.whitelist()
 def fix_all_recording_lessons():
 	"""
 	Fix all recordings that don't have corresponding lessons.
