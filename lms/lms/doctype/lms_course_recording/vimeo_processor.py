@@ -203,6 +203,8 @@ def find_live_class(topic, recording_date, recording_time):
     Returns:
         dict with live class details or None
     """
+    frappe.logger().info(f"find_live_class: topic='{topic}', date={recording_date}, time={recording_time}")
+
     # Strategy 1: Exact title match + exact date
     live_class = frappe.db.get_value(
         "LMS Live Class",
@@ -212,8 +214,11 @@ def find_live_class(topic, recording_date, recording_time):
     )
 
     if live_class:
+        frappe.logger().info(f"find_live_class: Found exact match: {live_class.name}")
         # Get course from batch
         live_class["course"] = get_course_from_batch(live_class.batch_name)
+        if not live_class["course"]:
+            frappe.logger().warning(f"find_live_class: No course found for batch {live_class.batch_name}")
         return live_class
 
     # Strategy 2: Title contains topic + exact date
@@ -223,16 +228,21 @@ def find_live_class(topic, recording_date, recording_time):
         filters={"date": recording_date},
         fields=["name", "batch_name", "host", "title", "date", "time", "uuid"],
     )
+    frappe.logger().info(f"find_live_class: Found {len(all_classes_on_date)} classes on {recording_date}")
 
     for lc in all_classes_on_date:
         # Check if the live class title is contained in the topic or vice versa
         if topic.lower() in lc.title.lower() or lc.title.lower() in topic.lower():
+            frappe.logger().info(f"find_live_class: Found partial match: {lc.name} (title='{lc.title}')")
             lc["course"] = get_course_from_batch(lc.batch_name)
+            if not lc["course"]:
+                frappe.logger().warning(f"find_live_class: No course found for batch {lc.batch_name}")
             return lc
 
     # Strategy 3: Exact title + date within 1 day (timezone edge cases)
     date_before = recording_date - timedelta(days=1)
     date_after = recording_date + timedelta(days=1)
+    frappe.logger().info(f"find_live_class: Trying date range {date_before} to {date_after}")
 
     live_class = frappe.db.get_value(
         "LMS Live Class",
@@ -245,9 +255,13 @@ def find_live_class(topic, recording_date, recording_time):
     )
 
     if live_class:
+        frappe.logger().info(f"find_live_class: Found date-range match: {live_class.name}")
         live_class["course"] = get_course_from_batch(live_class.batch_name)
+        if not live_class["course"]:
+            frappe.logger().warning(f"find_live_class: No course found for batch {live_class.batch_name}")
         return live_class
 
+    frappe.logger().warning(f"find_live_class: No matching live class found for topic='{topic}', date={recording_date}")
     return None
 
 
@@ -316,9 +330,11 @@ def create_recording(video_id, video_data, live_class):
 
     recording.insert(ignore_permissions=True)
     frappe.db.commit()
+    frappe.logger().info(f"Created recording document: {recording.name}")
 
     # Create lesson for this recording
     if live_class.course:
+        frappe.logger().info(f"Attempting to create lesson for recording {recording.name} in course {live_class.course}")
         try:
             lesson_name = create_lesson_for_recording(
                 course=live_class.course,
@@ -327,12 +343,16 @@ def create_recording(video_id, video_data, live_class):
             )
             if lesson_name:
                 frappe.logger().info(f"Created lesson {lesson_name} for recording {recording.name}")
+            else:
+                frappe.logger().warning(f"create_lesson_for_recording returned None for recording {recording.name}")
         except Exception as e:
             # Log error but don't fail the recording creation
             frappe.log_error(
-                f"Failed to create lesson for recording {recording.name}: {str(e)}",
+                f"Failed to create lesson for recording {recording.name}: {str(e)}\n{frappe.get_traceback()}",
                 "Recording Lesson Error"
             )
+    else:
+        frappe.logger().warning(f"No course linked to recording {recording.name} - skipping lesson creation")
 
     return recording.name
 
@@ -354,21 +374,30 @@ def create_lesson_for_recording(course, title, vimeo_embed_url):
     Returns:
         The lesson name if created, None otherwise
     """
+    frappe.logger().info(f"create_lesson_for_recording called: course={course}, title={title}, url={vimeo_embed_url}")
+
     if not course or not vimeo_embed_url:
+        frappe.logger().warning(f"create_lesson_for_recording: Missing course ({course}) or embed_url ({vimeo_embed_url})")
         return None
 
     RECORDINGS_CHAPTER_TITLE = "Recordings"
     lesson_title = f"{title} Recording"
 
     # Check if lesson already exists (avoid duplicates)
+    # Note: We search by title only since course is a fetch_from field
     existing_lesson = frappe.db.get_value(
         "Course Lesson",
-        {"title": lesson_title, "course": course},
-        "name"
+        {"title": lesson_title},
+        ["name", "chapter"],
+        as_dict=True
     )
     if existing_lesson:
-        frappe.logger().info(f"Lesson already exists: {existing_lesson}")
-        return existing_lesson
+        # Verify it's for the same course by checking the chapter
+        existing_chapter_course = frappe.db.get_value("Course Chapter", existing_lesson.chapter, "course")
+        if existing_chapter_course == course:
+            frappe.logger().info(f"Lesson already exists: {existing_lesson.name}")
+            return existing_lesson.name
+        # Different course, proceed to create new lesson
 
     # Find existing "Recordings" chapter for this course
     chapter_name = frappe.db.get_value(
@@ -376,29 +405,61 @@ def create_lesson_for_recording(course, title, vimeo_embed_url):
         {"course": course, "title": RECORDINGS_CHAPTER_TITLE},
         "name"
     )
+    frappe.logger().info(f"Looking for Recordings chapter in course {course}: found={chapter_name}")
 
     # Create chapter if not exists
     if not chapter_name:
-        chapter_doc = frappe.new_doc("Course Chapter")
-        chapter_doc.title = RECORDINGS_CHAPTER_TITLE
-        chapter_doc.course = course
-        chapter_doc.insert(ignore_permissions=True)
-        chapter_name = chapter_doc.name
-        frappe.logger().info(f"Created Recordings chapter: {chapter_name}")
+        frappe.logger().info(f"Creating new Recordings chapter for course {course}")
+        try:
+            chapter_doc = frappe.new_doc("Course Chapter")
+            chapter_doc.title = RECORDINGS_CHAPTER_TITLE
+            chapter_doc.course = course
+            chapter_doc.insert(ignore_permissions=True)
+            frappe.db.commit()  # Commit immediately after chapter creation
+            chapter_name = chapter_doc.name
+            frappe.logger().info(f"Created Recordings chapter: {chapter_name}")
+        except Exception as e:
+            frappe.log_error(
+                f"Failed to create Recordings chapter for course {course}: {str(e)}\n{frappe.get_traceback()}",
+                "Recording Chapter Creation Error"
+            )
+            return None
 
     # Always ensure the chapter is in the course's chapters table (Chapter Reference)
     # This is required for the chapter to appear in course outline
     # Check if already linked to prevent duplicates
-    chapter_already_linked = frappe.db.exists(
-        "Chapter Reference",
-        {"parent": course, "chapter": chapter_name}
-    )
+    try:
+        chapter_already_linked = frappe.db.exists(
+            "Chapter Reference",
+            {"parent": course, "chapter": chapter_name}
+        )
+        frappe.logger().info(f"Chapter {chapter_name} already linked to course {course}: {chapter_already_linked}")
 
-    if not chapter_already_linked:
-        course_doc = frappe.get_doc("LMS Course", course)
-        course_doc.append("chapters", {"chapter": chapter_name})
-        course_doc.save(ignore_permissions=True)
-        frappe.logger().info(f"Added chapter {chapter_name} to course {course}")
+        if not chapter_already_linked:
+            # Directly insert Chapter Reference to bypass LMS Course permission checks
+            # Get the next idx for ordering
+            max_idx = frappe.db.sql("""
+                SELECT COALESCE(MAX(idx), 0) FROM `tabChapter Reference`
+                WHERE parent = %s
+            """, (course,))[0][0]
+
+            frappe.get_doc({
+                "doctype": "Chapter Reference",
+                "parent": course,
+                "parenttype": "LMS Course",
+                "parentfield": "chapters",
+                "chapter": chapter_name,
+                "idx": max_idx + 1
+            }).insert(ignore_permissions=True)
+            frappe.db.commit()
+            frappe.logger().info(f"Added chapter {chapter_name} to course {course} (idx={max_idx + 1})")
+    except Exception as e:
+        frappe.log_error(
+            f"Failed to link chapter {chapter_name} to course {course}: {str(e)}\n{frappe.get_traceback()}",
+            "Recording Chapter Link Error"
+        )
+        # Continue anyway - the chapter exists, just not linked to course outline
+        # The lesson can still be created
 
     # Create the lesson with Vimeo embed using EditorJS JSON format
     # This is the same format the frontend uses when saving lessons
@@ -416,20 +477,60 @@ def create_lesson_for_recording(course, title, vimeo_embed_url):
         "version": "2.28.2"
     }
 
-    lesson = frappe.new_doc("Course Lesson")
-    lesson.title = lesson_title
-    lesson.chapter = chapter_name
-    # Use content field with EditorJS JSON format (same as frontend)
-    lesson.content = json.dumps(editor_content)
-    lesson.insert(ignore_permissions=True)
+    frappe.logger().info(f"Creating lesson: title='{lesson_title}', chapter={chapter_name}")
+    try:
+        lesson = frappe.new_doc("Course Lesson")
+        lesson.title = lesson_title
+        lesson.chapter = chapter_name
+        # Use content field with EditorJS JSON format (same as frontend)
+        lesson.content = json.dumps(editor_content)
+        lesson.insert(ignore_permissions=True)
+        frappe.db.commit()  # Commit after lesson creation
+        frappe.logger().info(f"Created lesson document: {lesson.name}")
+    except Exception as e:
+        frappe.log_error(
+            f"Failed to create lesson '{lesson_title}' in chapter {chapter_name}: {str(e)}\n{frappe.get_traceback()}",
+            "Recording Lesson Creation Error"
+        )
+        return None
 
     # Add lesson to chapter's lessons table (Lesson Reference)
-    chapter_doc = frappe.get_doc("Course Chapter", chapter_name)
-    chapter_doc.append("lessons", {"lesson": lesson.name})
-    chapter_doc.save(ignore_permissions=True)
+    try:
+        # Check if lesson is already linked to chapter
+        lesson_already_linked = frappe.db.exists(
+            "Lesson Reference",
+            {"parent": chapter_name, "lesson": lesson.name}
+        )
 
-    frappe.db.commit()
+        if not lesson_already_linked:
+            # Get the next idx for ordering
+            max_idx = frappe.db.sql("""
+                SELECT COALESCE(MAX(idx), 0) FROM `tabLesson Reference`
+                WHERE parent = %s
+            """, (chapter_name,))[0][0]
 
+            # Directly insert Lesson Reference to avoid any permission issues
+            frappe.get_doc({
+                "doctype": "Lesson Reference",
+                "parent": chapter_name,
+                "parenttype": "Course Chapter",
+                "parentfield": "lessons",
+                "lesson": lesson.name,
+                "idx": max_idx + 1
+            }).insert(ignore_permissions=True)
+            frappe.db.commit()
+            frappe.logger().info(f"Added lesson {lesson.name} to chapter {chapter_name} (idx={max_idx + 1})")
+        else:
+            frappe.logger().info(f"Lesson {lesson.name} already linked to chapter {chapter_name}")
+    except Exception as e:
+        frappe.log_error(
+            f"Failed to link lesson {lesson.name} to chapter {chapter_name}: {str(e)}\n{frappe.get_traceback()}",
+            "Recording Lesson Link Error"
+        )
+        # Lesson was created but not linked - still return the lesson name
+        return lesson.name
+
+    frappe.logger().info(f"Successfully created recording lesson: {lesson.name}")
     return lesson.name
 
 
@@ -500,6 +601,26 @@ def create_orphan_recording(video_id, video_data):
 
     recording.insert(ignore_permissions=True)
     frappe.db.commit()
+    frappe.logger().info(f"Created orphan recording: {recording.name}")
+
+    # Create lesson for orphan recording too
+    if default_course:
+        frappe.logger().info(f"Creating lesson for orphan recording {recording.name} in course {default_course}")
+        try:
+            lesson_name = create_lesson_for_recording(
+                course=default_course,
+                title=title,  # Use video title for orphan recordings
+                vimeo_embed_url=embed_url
+            )
+            if lesson_name:
+                frappe.logger().info(f"Created lesson {lesson_name} for orphan recording {recording.name}")
+            else:
+                frappe.logger().warning(f"create_lesson_for_recording returned None for orphan recording {recording.name}")
+        except Exception as e:
+            frappe.log_error(
+                f"Failed to create lesson for orphan recording {recording.name}: {str(e)}\n{frappe.get_traceback()}",
+                "Orphan Recording Lesson Error"
+            )
 
     # Log for admin review
     frappe.log_error(
@@ -798,3 +919,130 @@ def poll_vimeo_folder():
             f"Vimeo folder poll failed: {str(e)}",
             "Vimeo Poll Error"
         )
+
+
+def fix_missing_recording_lessons():
+    """
+    Fix all existing recordings that don't have corresponding lessons.
+
+    This function:
+    1. Finds all LMS Course Recording documents with a course but no lesson
+    2. Creates the "Recordings" chapter and lesson for each
+
+    Can be called manually or via patch after deployment.
+    Returns a summary of what was fixed.
+    """
+    frappe.logger().info("Starting fix_missing_recording_lessons...")
+
+    results = {
+        "total_recordings": 0,
+        "already_have_lessons": 0,
+        "lessons_created": 0,
+        "failed": 0,
+        "skipped_no_course": 0,
+        "skipped_no_vimeo_url": 0,
+        "details": []
+    }
+
+    # Get all recordings with a course and vimeo embed URL
+    recordings = frappe.get_all(
+        "LMS Course Recording",
+        filters={
+            "course": ["is", "set"],
+            "status": "Uploaded"
+        },
+        fields=["name", "title", "course", "live_class", "vimeo_video_id", "vimeo_player_embed_url"],
+        order_by="creation asc"
+    )
+
+    results["total_recordings"] = len(recordings)
+    frappe.logger().info(f"Found {len(recordings)} recordings to check")
+
+    for recording in recordings:
+        try:
+            # Skip if no course
+            if not recording.course:
+                results["skipped_no_course"] += 1
+                continue
+
+            # Get embed URL
+            embed_url = recording.vimeo_player_embed_url
+            if not embed_url and recording.vimeo_video_id:
+                embed_url = f"https://player.vimeo.com/video/{recording.vimeo_video_id}"
+
+            if not embed_url:
+                results["skipped_no_vimeo_url"] += 1
+                results["details"].append({
+                    "recording": recording.name,
+                    "status": "skipped",
+                    "reason": "No Vimeo URL"
+                })
+                continue
+
+            # Determine the title for the lesson
+            title = recording.title
+            if recording.live_class:
+                live_class_title = frappe.db.get_value("LMS Live Class", recording.live_class, "title")
+                if live_class_title:
+                    title = live_class_title
+
+            # Check if lesson already exists
+            expected_lesson_title = f"{title} Recording"
+            existing_lesson = frappe.db.get_value(
+                "Course Lesson",
+                {"title": expected_lesson_title},
+                ["name", "chapter"],
+                as_dict=True
+            )
+
+            if existing_lesson:
+                # Verify it's for the same course
+                existing_chapter_course = frappe.db.get_value("Course Chapter", existing_lesson.chapter, "course")
+                if existing_chapter_course == recording.course:
+                    results["already_have_lessons"] += 1
+                    results["details"].append({
+                        "recording": recording.name,
+                        "status": "exists",
+                        "lesson": existing_lesson.name
+                    })
+                    continue
+
+            # Create the lesson
+            frappe.logger().info(f"Creating lesson for recording {recording.name}")
+            lesson_name = create_lesson_for_recording(
+                course=recording.course,
+                title=title,
+                vimeo_embed_url=embed_url
+            )
+
+            if lesson_name:
+                results["lessons_created"] += 1
+                results["details"].append({
+                    "recording": recording.name,
+                    "status": "created",
+                    "lesson": lesson_name
+                })
+                frappe.logger().info(f"Created lesson {lesson_name} for recording {recording.name}")
+            else:
+                results["failed"] += 1
+                results["details"].append({
+                    "recording": recording.name,
+                    "status": "failed",
+                    "reason": "create_lesson_for_recording returned None"
+                })
+
+        except Exception as e:
+            results["failed"] += 1
+            results["details"].append({
+                "recording": recording.name,
+                "status": "error",
+                "reason": str(e)
+            })
+            frappe.log_error(
+                f"Failed to fix recording {recording.name}: {str(e)}\n{frappe.get_traceback()}",
+                "Fix Recording Lesson Error"
+            )
+
+    frappe.logger().info(f"fix_missing_recording_lessons completed: {results['lessons_created']} created, {results['already_have_lessons']} already existed, {results['failed']} failed")
+
+    return results

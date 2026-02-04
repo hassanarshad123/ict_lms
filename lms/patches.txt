@@ -117,3 +117,4 @@ lms.patches.v2_0.fix_job_application_resume_urls
 lms.patches.v2_0.open_to_opportunities
 lms.patches.v2_0.give_user_permission_to_lms_roles
 lms.patches.fix_orphaned_recordings_chapters
+lms.patches.v2_0.fix_missing_recording_lessons

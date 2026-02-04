@@ -7199,7 +7199,7 @@ def get_all_batches(filters=None, page_length=0):
 
 
 @frappe.whitelist()
-def get_all_batch_enrollments(batch=None, filters=None, page_length=0):
+def get_all_batch_enrollments(batch=None, filters=None, page_length=0, status=None):
 	"""
 	Get all batch enrollments with student details.
 	Only accessible to Moderator and Course Creator roles.
@@ -7208,9 +7208,10 @@ def get_all_batch_enrollments(batch=None, filters=None, page_length=0):
 		batch (str): Optional batch name to filter by specific batch
 		filters (dict): Optional additional filters to apply
 		page_length (int): Number of records to return (0 = all)
+		status (str): Optional status filter (Active, Expired, Extended, Manually Removed)
 
 	Returns:
-		list: List of all batch enrollments with student details
+		dict: Contains total_count and list of all batch enrollments with student details
 	"""
 	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
 		frappe.throw(_("You don't have permission to access batch enrollments."), frappe.PermissionError)
@@ -7225,7 +7226,14 @@ def get_all_batch_enrollments(batch=None, filters=None, page_length=0):
 	if batch:
 		filters["batch"] = batch
 
+	# Add status filter if provided
+	if status:
+		filters["status"] = status
+
 	page_length = cint(page_length)
+
+	# Get total count first
+	total_count = frappe.db.count("LMS Batch Enrollment", filters)
 
 	enrollments = frappe.get_all(
 		"LMS Batch Enrollment",
@@ -7238,6 +7246,11 @@ def get_all_batch_enrollments(batch=None, filters=None, page_length=0):
 			"creation",
 			"modified",
 			"member_name",
+			"member_username",
+			"enrollment_date",
+			"access_start_date",
+			"access_end_date",
+			"is_time_limited",
 		],
 		order_by="creation desc",
 		limit_page_length=page_length if page_length > 0 else 100000,
@@ -7272,4 +7285,252 @@ def get_all_batch_enrollments(batch=None, filters=None, page_length=0):
 			enrollment.batch_start_date = batch_details.start_date
 			enrollment.batch_end_date = batch_details.end_date
 
-	return enrollments
+	return {
+		"total_count": total_count,
+		"returned_count": len(enrollments),
+		"enrollments": enrollments
+	}
+
+
+@frappe.whitelist()
+def diagnose_recording_lesson(recording_name):
+	"""
+	Diagnostic API to check why a recording lesson wasn't created.
+
+	Args:
+		recording_name: The name of the LMS Course Recording document
+
+	Returns:
+		dict with diagnostic information
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to run diagnostics."), frappe.PermissionError)
+
+	result = {
+		"recording_name": recording_name,
+		"issues": [],
+		"checks": {}
+	}
+
+	# 1. Check if recording exists
+	if not frappe.db.exists("LMS Course Recording", recording_name):
+		result["issues"].append(f"Recording '{recording_name}' does not exist")
+		return result
+
+	recording = frappe.get_doc("LMS Course Recording", recording_name)
+	result["checks"]["recording_exists"] = True
+	result["checks"]["recording_course"] = recording.course
+	result["checks"]["recording_live_class"] = recording.live_class
+	result["checks"]["recording_batch"] = recording.batch
+	result["checks"]["vimeo_video_id"] = recording.vimeo_video_id
+	result["checks"]["vimeo_player_embed_url"] = recording.vimeo_player_embed_url
+
+	# 2. Check if course is linked
+	if not recording.course:
+		result["issues"].append("Recording has no course linked")
+
+		# Try to find why - check live class
+		if recording.live_class:
+			live_class = frappe.get_doc("LMS Live Class", recording.live_class)
+			result["checks"]["live_class_batch"] = live_class.batch_name
+
+			if not live_class.batch_name:
+				result["issues"].append("Live class has no batch linked")
+			else:
+				# Check if batch has courses
+				batch_courses = frappe.get_all(
+					"Batch Course",
+					filters={"parent": live_class.batch_name},
+					fields=["course", "title"]
+				)
+				result["checks"]["batch_courses"] = batch_courses
+				if not batch_courses:
+					result["issues"].append(f"Batch '{live_class.batch_name}' has no courses linked")
+		else:
+			result["issues"].append("Recording has no live class linked (orphan recording)")
+
+		return result
+
+	result["checks"]["course_exists"] = frappe.db.exists("LMS Course", recording.course)
+
+	# 3. Check for "Recordings" chapter
+	recordings_chapter = frappe.db.get_value(
+		"Course Chapter",
+		{"course": recording.course, "title": "Recordings"},
+		["name", "course"],
+		as_dict=True
+	)
+	result["checks"]["recordings_chapter"] = recordings_chapter
+
+	if not recordings_chapter:
+		result["issues"].append(f"No 'Recordings' chapter exists in course '{recording.course}'")
+	else:
+		# 4. Check if chapter is linked to course
+		chapter_linked = frappe.db.exists(
+			"Chapter Reference",
+			{"parent": recording.course, "chapter": recordings_chapter.name}
+		)
+		result["checks"]["chapter_linked_to_course"] = bool(chapter_linked)
+
+		if not chapter_linked:
+			result["issues"].append(f"Recordings chapter exists but is not linked to course")
+
+	# 5. Check for recording lesson
+	if recording.live_class:
+		live_class = frappe.get_doc("LMS Live Class", recording.live_class)
+		expected_lesson_title = f"{live_class.title} Recording"
+
+		existing_lesson = frappe.db.get_value(
+			"Course Lesson",
+			{"title": expected_lesson_title},
+			["name", "chapter", "course"],
+			as_dict=True
+		)
+		result["checks"]["expected_lesson_title"] = expected_lesson_title
+		result["checks"]["existing_lesson"] = existing_lesson
+
+		if existing_lesson:
+			# Check if it's in the right chapter
+			if recordings_chapter and existing_lesson.chapter != recordings_chapter.name:
+				result["issues"].append(f"Lesson exists but in wrong chapter: {existing_lesson.chapter}")
+
+			# Check if lesson is linked to chapter
+			lesson_linked = frappe.db.exists(
+				"Lesson Reference",
+				{"parent": existing_lesson.chapter, "lesson": existing_lesson.name}
+			)
+			result["checks"]["lesson_linked_to_chapter"] = bool(lesson_linked)
+
+			if not lesson_linked:
+				result["issues"].append("Lesson exists but not linked to chapter's lessons table")
+		else:
+			result["issues"].append(f"No lesson found with title '{expected_lesson_title}'")
+
+	# 6. Check Error Log for related errors
+	error_logs = frappe.get_all(
+		"Error Log",
+		filters={
+			"error": ["like", f"%{recording_name}%"],
+			"creation": [">=", recording.creation]
+		},
+		fields=["name", "method", "error"],
+		limit=5
+	)
+	result["checks"]["related_error_logs"] = len(error_logs)
+	if error_logs:
+		result["error_log_names"] = [e.name for e in error_logs]
+		result["issues"].append(f"Found {len(error_logs)} error logs related to this recording")
+
+	if not result["issues"]:
+		result["status"] = "OK - Lesson should exist and be visible"
+	else:
+		result["status"] = f"ISSUES FOUND: {len(result['issues'])}"
+
+	return result
+
+
+@frappe.whitelist()
+def fix_all_recording_lessons():
+	"""
+	Fix all recordings that don't have corresponding lessons.
+
+	This will:
+	1. Find all recordings with a course but no lesson
+	2. Create the "Recordings" chapter and lesson for each
+
+	Returns:
+		dict with summary of what was fixed
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to run this fix."), frappe.PermissionError)
+
+	from lms.lms.doctype.lms_course_recording.vimeo_processor import fix_missing_recording_lessons
+
+	# Run in background for large datasets
+	frappe.enqueue(
+		fix_missing_recording_lessons,
+		queue="long",
+		timeout=3600,  # 1 hour timeout
+	)
+
+	return {
+		"status": "started",
+		"message": "Fix job has been enqueued. Check Error Log for 'Fix Recording Lesson Error' entries if any failures occur."
+	}
+
+
+@frappe.whitelist()
+def fix_all_recording_lessons_sync():
+	"""
+	Fix all recordings synchronously (for smaller datasets or debugging).
+
+	Returns:
+		dict with detailed results
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to run this fix."), frappe.PermissionError)
+
+	from lms.lms.doctype.lms_course_recording.vimeo_processor import fix_missing_recording_lessons
+
+	return fix_missing_recording_lessons()
+
+
+@frappe.whitelist()
+def create_recording_lesson_manually(recording_name):
+	"""
+	Manually create a lesson for a recording that failed to create automatically.
+
+	Args:
+		recording_name: The name of the LMS Course Recording document
+
+	Returns:
+		dict with result
+	"""
+	if not has_moderator_role() and "Course Creator" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You don't have permission to create lessons."), frappe.PermissionError)
+
+	from lms.lms.doctype.lms_course_recording.vimeo_processor import create_lesson_for_recording
+
+	recording = frappe.get_doc("LMS Course Recording", recording_name)
+
+	if not recording.course:
+		frappe.throw(_("Recording has no course linked. Please set the course first."))
+
+	# Get the title from live class or use recording title
+	title = recording.title
+	if recording.live_class:
+		live_class = frappe.get_doc("LMS Live Class", recording.live_class)
+		title = live_class.title
+
+	# Get the embed URL
+	embed_url = recording.vimeo_player_embed_url
+	if not embed_url and recording.vimeo_video_id:
+		embed_url = f"https://player.vimeo.com/video/{recording.vimeo_video_id}"
+
+	if not embed_url:
+		frappe.throw(_("Recording has no Vimeo embed URL"))
+
+	try:
+		lesson_name = create_lesson_for_recording(
+			course=recording.course,
+			title=title,
+			vimeo_embed_url=embed_url
+		)
+
+		if lesson_name:
+			return {
+				"status": "success",
+				"lesson": lesson_name,
+				"message": f"Successfully created lesson '{lesson_name}'"
+			}
+		else:
+			return {
+				"status": "failed",
+				"message": "create_lesson_for_recording returned None - check logs"
+			}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Manual Recording Lesson Creation Error")
+		return {
+			"status": "error",
+			"message": str(e)
+		}

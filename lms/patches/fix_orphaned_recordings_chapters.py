@@ -1,8 +1,10 @@
 """
-Fix orphaned Recordings chapters that were created but not linked to their courses.
+Fix recordings that don't have corresponding lessons created.
 
-This patch finds all "Recordings" chapters that exist in the Course Chapter table
-but are not linked to their course via the Chapter Reference table, and links them.
+This patch:
+1. Finds all LMS Course Recording documents with a course but no lesson
+2. Creates the "Recordings" chapter (if needed) and lesson for each
+3. Links orphaned chapters to their courses
 
 Run with: bench --site <sitename> execute lms.patches.fix_orphaned_recordings_chapters.execute
 """
@@ -11,7 +13,40 @@ import frappe
 
 
 def execute():
+    """Fix all recordings that don't have corresponding lessons."""
+    from lms.lms.doctype.lms_course_recording.vimeo_processor import fix_missing_recording_lessons
+
+    print("Starting fix for missing recording lessons...")
+
+    try:
+        results = fix_missing_recording_lessons()
+
+        print(f"\n=== Results ===")
+        print(f"Total recordings checked: {results['total_recordings']}")
+        print(f"Already have lessons: {results['already_have_lessons']}")
+        print(f"Lessons created: {results['lessons_created']}")
+        print(f"Failed: {results['failed']}")
+        print(f"Skipped (no course): {results['skipped_no_course']}")
+        print(f"Skipped (no Vimeo URL): {results['skipped_no_vimeo_url']}")
+
+        if results['failed'] > 0:
+            print(f"\nCheck Error Log for 'Fix Recording Lesson Error' entries for details on failures.")
+
+        # Also fix any orphaned chapters that might still exist
+        fix_orphaned_chapters()
+
+    except Exception as e:
+        frappe.log_error(
+            f"Patch fix_orphaned_recordings_chapters failed: {str(e)}\n{frappe.get_traceback()}",
+            "Patch Error"
+        )
+        raise
+
+
+def fix_orphaned_chapters():
     """Find and link orphaned Recordings chapters to their courses."""
+    print("\nChecking for orphaned Recordings chapters...")
+
     # Find all "Recordings" chapters
     recordings_chapters = frappe.get_all(
         "Course Chapter",
@@ -36,12 +71,26 @@ def execute():
         )
 
         if not is_linked:
-            # Link it to the course
-            course_doc = frappe.get_doc("LMS Course", chapter.course)
-            course_doc.append("chapters", {"chapter": chapter.name})
-            course_doc.save(ignore_permissions=True)
-            print(f"Linked chapter '{chapter.name}' to course '{chapter.course}'")
-            fixed_count += 1
+            try:
+                # Directly insert Chapter Reference to bypass LMS Course permission checks
+                max_idx = frappe.db.sql("""
+                    SELECT COALESCE(MAX(idx), 0) FROM `tabChapter Reference`
+                    WHERE parent = %s
+                """, (chapter.course,))[0][0]
+
+                frappe.get_doc({
+                    "doctype": "Chapter Reference",
+                    "parent": chapter.course,
+                    "parenttype": "LMS Course",
+                    "parentfield": "chapters",
+                    "chapter": chapter.name,
+                    "idx": max_idx + 1
+                }).insert(ignore_permissions=True)
+
+                print(f"Linked chapter '{chapter.name}' to course '{chapter.course}'")
+                fixed_count += 1
+            except Exception as e:
+                print(f"Failed to link chapter '{chapter.name}': {str(e)}")
         else:
             print(f"Chapter '{chapter.name}' already linked to course '{chapter.course}'")
 

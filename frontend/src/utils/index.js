@@ -169,7 +169,7 @@ export function getEditorTools() {
 						id: ([id]) => id,
 					},
 					vimeo: {
-						regex: /(?:http[s]?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)/,
+						regex: /(?:http[s]?:\/\/)?(?:www\.)?(?:player\.)?vimeo\.com\/(?:video\/)?(\d+)/,
 						embedUrl: '<%= remote_id %>',
 						html: `<div class="video-player" data-plyr-provider="vimeo"></div>`,
 						id: ([id]) => id,
