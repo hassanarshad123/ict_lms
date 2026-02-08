@@ -2,29 +2,32 @@
 # For license information, please see license.txt
 
 import hashlib
+import re
 
 import frappe
 from frappe import _
 from frappe.utils import add_days, now_datetime, nowdate
 
 
+def _normalize_user_agent(user_agent):
+	"""
+	Strip version numbers from User-Agent so browser updates don't change the hash.
+
+	'Chrome/144.0.0.0' and 'Chrome/145.0.0.0' both normalize to 'Chrome',
+	while OS info like '(Windows NT 10.0; Win64; x64)' stays intact.
+	"""
+	return re.sub(r"/\S+", "", user_agent).strip()
+
+
 def get_device_id(request=None):
 	"""
-	Generate a unique device ID from user-agent string only.
+	Generate a stable device ID from a normalized user-agent string.
 
-	Using only user-agent (not IP) ensures the same browser/device always generates
-	the same device_id, even if the user's IP changes (mobile networks, VPN, etc.).
-	This prevents the same physical device from being counted multiple times.
+	Version numbers are stripped before hashing so a Chrome auto-update
+	(e.g. 144 -> 145) does NOT change the device fingerprint.
 
-	While different users with identical browser versions would technically have
-	the same device_id hash, this is acceptable because device_id is always
-	used in combination with the user field to identify a specific user's device.
-
-	Args:
-		request: Frappe request object (optional, uses frappe.request if not provided)
-
-	Returns:
-		str: Hashed device identifier based on user-agent
+	The hash is always used together with the user field, so two different
+	users on the same browser/OS will not collide.
 	"""
 	if request is None:
 		request = frappe.request
@@ -37,22 +40,36 @@ def get_device_id(request=None):
 	if not user_agent:
 		return None
 
-	# Create a hash of user-agent only for stable device identification
-	# The same browser on the same device will always produce the same hash
-	device_id = hashlib.sha256(user_agent.encode()).hexdigest()[:32]
+	normalized = _normalize_user_agent(user_agent)
+	return hashlib.sha256(normalized.encode()).hexdigest()[:32]
 
-	return device_id
+
+def _get_legacy_device_id(request=None):
+	"""
+	Device ID using the OLD algorithm (raw UA hash, no normalization).
+	Used only during migration: if a device was registered with the old hash,
+	we recognize it and silently update the stored hash to the new format.
+	"""
+	if request is None:
+		request = frappe.request
+
+	if not request:
+		return None
+
+	user_agent = request.headers.get("User-Agent", "")
+
+	if not user_agent:
+		return None
+
+	return hashlib.sha256(user_agent.encode()).hexdigest()[:32]
 
 
 def get_device_name(request=None):
 	"""
 	Extract a human-readable device name from the User-Agent string.
 
-	Args:
-		request: Frappe request object (optional)
-
 	Returns:
-		str: Human-readable device name (e.g., "Chrome on Windows")
+		str: e.g. "Chrome on Windows"
 	"""
 	if request is None:
 		request = frappe.request
@@ -65,11 +82,9 @@ def get_device_name(request=None):
 	if not user_agent:
 		return "Unknown Device"
 
-	# Simple browser/OS detection
 	browser = "Unknown Browser"
 	os_name = "Unknown OS"
 
-	# Detect browser
 	if "Chrome" in user_agent and "Edg" not in user_agent:
 		browser = "Chrome"
 	elif "Firefox" in user_agent:
@@ -83,7 +98,6 @@ def get_device_name(request=None):
 	elif "Opera" in user_agent or "OPR" in user_agent:
 		browser = "Opera"
 
-	# Detect OS
 	if "Windows" in user_agent:
 		os_name = "Windows"
 	elif "Mac OS" in user_agent or "Macintosh" in user_agent:
@@ -99,15 +113,7 @@ def get_device_name(request=None):
 
 
 def get_ip_address(request=None):
-	"""
-	Get the client IP address from the request.
-
-	Args:
-		request: Frappe request object (optional)
-
-	Returns:
-		str: Client IP address
-	"""
+	"""Get the client IP address from the request."""
 	if request is None:
 		request = frappe.request
 
@@ -128,7 +134,6 @@ def get_device_limit_settings():
 	Returns:
 		dict: Settings with keys: enabled, limit, stale_days
 	"""
-	# Use get_single_value to avoid caching issues
 	enabled = frappe.db.get_single_value("LMS Settings", "enable_device_limit") or 0
 	limit = frappe.db.get_single_value("LMS Settings", "device_limit") or 2
 	stale_days = frappe.db.get_single_value("LMS Settings", "device_stale_days") or 30
@@ -144,14 +149,8 @@ def register_device(user, device_id=None, device_name=None, ip_address=None):
 	"""
 	Register or update a device for a user.
 
-	Args:
-		user: User ID (email)
-		device_id: Unique device identifier (optional, will be generated if not provided)
-		device_name: Human-readable device name (optional)
-		ip_address: Client IP address (optional)
-
 	Returns:
-		dict: Device document data
+		Document | None: The device document, or None if device_id unavailable
 	"""
 	if not device_id:
 		device_id = get_device_id()
@@ -165,14 +164,12 @@ def register_device(user, device_id=None, device_name=None, ip_address=None):
 	if not ip_address:
 		ip_address = get_ip_address()
 
-	# Check if device already exists
 	existing_device = frappe.db.exists(
 		"LMS User Device",
 		{"user": user, "device_id": device_id}
 	)
 
 	if existing_device:
-		# Update last active time
 		frappe.db.set_value(
 			"LMS User Device",
 			existing_device,
@@ -184,7 +181,6 @@ def register_device(user, device_id=None, device_name=None, ip_address=None):
 		)
 		return frappe.get_doc("LMS User Device", existing_device)
 
-	# Create new device record
 	device = frappe.get_doc({
 		"doctype": "LMS User Device",
 		"user": user,
@@ -199,70 +195,8 @@ def register_device(user, device_id=None, device_name=None, ip_address=None):
 	return device
 
 
-def check_device_limit(user, device_id=None):
-	"""
-	Check if a user can login from a device (has not exceeded device limit).
-	Admins (Moderator, System Manager) are exempt from device limits.
-
-	Args:
-		user: User ID (email)
-		device_id: Current device ID (optional, will be generated if not provided)
-
-	Returns:
-		tuple: (can_login: bool, message: str)
-	"""
-	settings = get_device_limit_settings()
-
-	if not settings["enabled"]:
-		return (True, "")
-
-	# Admins are exempt from device limit
-	user_roles = frappe.get_roles(user)
-	if "Moderator" in user_roles or "System Manager" in user_roles:
-		return (True, "")
-
-	if not device_id:
-		device_id = get_device_id()
-
-	if not device_id:
-		# If we can't determine device, allow login (graceful degradation)
-		return (True, "")
-
-	# Check if device is already registered
-	existing_device = frappe.db.exists(
-		"LMS User Device",
-		{"user": user, "device_id": device_id}
-	)
-
-	if existing_device:
-		# Device already registered, allow login
-		return (True, "")
-
-	# Count current devices for user
-	device_count = frappe.db.count(
-		"LMS User Device",
-		{"user": user}
-	)
-
-	if device_count >= settings["limit"]:
-		return (
-			False,
-			_("You have reached the maximum number of devices ({0}). Please contact the administrator to reset your device access.").format(settings["limit"])
-		)
-
-	return (True, "")
-
-
 def get_user_devices(user):
-	"""
-	Get all registered devices for a user.
-
-	Args:
-		user: User ID (email)
-
-	Returns:
-		list: List of device documents
-	"""
+	"""Get all registered devices for a user, with current device marked."""
 	devices = frappe.get_all(
 		"LMS User Device",
 		filters={"user": user},
@@ -270,7 +204,6 @@ def get_user_devices(user):
 		order_by="last_active desc"
 	)
 
-	# Mark current device
 	current_device_id = get_device_id()
 	for device in devices:
 		device["is_current"] = device["device_id"] == current_device_id
@@ -279,16 +212,7 @@ def get_user_devices(user):
 
 
 def remove_device(user, device_id):
-	"""
-	Remove a specific device for a user.
-
-	Args:
-		user: User ID (email)
-		device_id: Device ID to remove
-
-	Returns:
-		bool: True if device was removed, False otherwise
-	"""
+	"""Remove a specific device for a user."""
 	device_name = frappe.db.get_value(
 		"LMS User Device",
 		{"user": user, "device_id": device_id},
@@ -303,15 +227,7 @@ def remove_device(user, device_id):
 
 
 def clear_all_devices(user):
-	"""
-	Remove all devices for a user (admin function).
-
-	Args:
-		user: User ID (email)
-
-	Returns:
-		int: Number of devices removed
-	"""
+	"""Remove all devices for a user (admin function)."""
 	devices = frappe.get_all(
 		"LMS User Device",
 		filters={"user": user},
@@ -326,11 +242,8 @@ def clear_all_devices(user):
 
 def cleanup_stale_devices():
 	"""
-	Remove devices that have been inactive for longer than the stale period.
-	This should be run as a scheduled task.
-
-	Returns:
-		int: Number of devices removed
+	Remove devices inactive longer than the stale period.
+	Runs as a daily scheduled task.
 	"""
 	settings = get_device_limit_settings()
 
@@ -354,14 +267,16 @@ def cleanup_stale_devices():
 	return len(stale_devices)
 
 
+# ---------------------------------------------------------------------------
+# Login-time enforcement
+# ---------------------------------------------------------------------------
+
+
 def check_device_limit_before_session(user):
 	"""
 	Check device limit BEFORE session is created.
 	Called from patched LoginManager.post_login() in lms/__init__.py.
-	Throws error immediately if limit exceeded - no session is created.
-
-	Args:
-		user: User email/ID
+	Throws AuthenticationError immediately if limit exceeded — no session is created.
 	"""
 	try:
 		if not user or user == "Guest":
@@ -372,22 +287,20 @@ def check_device_limit_before_session(user):
 		if not settings["enabled"]:
 			return
 
-		# Admins are exempt from device limit
 		user_roles = frappe.get_roles(user)
 		if "Moderator" in user_roles or "System Manager" in user_roles:
 			return
 
 		device_id = get_device_id()
 		if not device_id:
-			# Can't determine device - allow login (graceful degradation)
 			return
+
+		legacy_device_id = _get_legacy_device_id()
 
 		limit = settings["limit"]
 		if not limit or limit < 1:
-			# Invalid limit - allow login
 			return
 
-		# Get all devices for user, ordered by creation (oldest first)
 		all_devices = frappe.get_all(
 			"LMS User Device",
 			filters={"user": user},
@@ -395,18 +308,21 @@ def check_device_limit_before_session(user):
 			order_by="creation asc"
 		)
 
-		# Get the allowed devices (first N registered)
 		allowed_device_ids = set(d["device_id"] for d in all_devices[:limit])
+		all_device_ids = set(d["device_id"] for d in all_devices)
 
-		# Check if current device is in the allowed list
+		# Check new hash
 		if device_id in allowed_device_ids:
-			# Device is allowed - will be updated in on_user_login
 			return
 
-		# Check if device is registered but not in allowed list (over limit)
-		all_device_ids = set(d["device_id"] for d in all_devices)
-		if device_id in all_device_ids:
-			# Device registered but not allowed - block login immediately
+		# Check legacy hash (device registered before UA normalization)
+		if legacy_device_id and legacy_device_id != device_id and legacy_device_id in allowed_device_ids:
+			return
+
+		# Device is registered but NOT in the allowed first-N
+		is_registered = device_id in all_device_ids
+		is_legacy_registered = legacy_device_id and legacy_device_id != device_id and legacy_device_id in all_device_ids
+		if is_registered or is_legacy_registered:
 			frappe.throw(
 				_("Device limit exceeded. You already have {0} devices registered. This device is not in the allowed list. Please contact administrator to reset your devices.").format(len(all_devices)),
 				frappe.AuthenticationError
@@ -414,202 +330,86 @@ def check_device_limit_before_session(user):
 
 		# Device is NOT registered at all
 		if len(all_devices) >= limit:
-			# At or over limit - block login immediately
 			frappe.throw(
 				_("Device limit reached. You can only use {0} devices. Please contact administrator to reset your device access.").format(limit),
 				frappe.AuthenticationError
 			)
 
-		# Under limit - device will be registered in on_user_login hook
+		# Under limit — device will be registered in on_user_login hook
 
 	except frappe.AuthenticationError:
-		# Re-raise authentication errors (device limit exceeded)
 		raise
 	except Exception as e:
-		# Log error but allow login (don't block due to technical issues)
+		# Log but don't block login due to technical issues
 		frappe.log_error(f"Device limit check failed: {str(e)}", "Device Limit Error")
 
 
 def on_user_login(login_manager):
 	"""
 	Hook called on user login AFTER session is created.
-	Registers device and updates last_active.
-	Device limit check is done in check_device_limit_before_session() BEFORE session creation.
-
-	Args:
-		login_manager: Frappe login manager
+	Registers the device and migrates legacy hashes to the new format.
 	"""
-	settings = get_device_limit_settings()
-
-	if not settings["enabled"]:
-		return
-
-	user = login_manager.user
-
-	if not user or user == "Guest":
-		return
-
-	# Admins are exempt
-	user_roles = frappe.get_roles(user)
-	if "Moderator" in user_roles or "System Manager" in user_roles:
-		return
-
-	device_id = get_device_id()
-	if not device_id:
-		return
-
-	# Check if device is already registered
-	existing_device = frappe.db.exists(
-		"LMS User Device",
-		{"user": user, "device_id": device_id}
-	)
-
-	if existing_device:
-		# Device already registered, update last_active
-		frappe.db.set_value(
-			"LMS User Device",
-			existing_device,
-			"last_active",
-			now_datetime(),
-			update_modified=False
-		)
-		frappe.db.commit()
-		return
-
-	# Device not registered - register it (limit was already checked before session creation)
 	try:
-		register_device(user, device_id)
-		frappe.db.commit()
-	except Exception:
-		frappe.log_error("Device registration failed on login")
+		settings = get_device_limit_settings()
 
-
-def validate_device_access():
-	"""
-	Before request hook to validate device access.
-	Only allows the first N registered devices (by creation time).
-	Forces logout if user is on a device that's not in the allowed list.
-	"""
-	# Skip for guest users
-	if frappe.session.user == "Guest":
-		return
-
-	# Skip for certain paths (login, logout, api auth endpoints)
-	if frappe.request:
-		path = frappe.request.path or ""
-		skip_paths = ["/api/method/login", "/api/method/logout", "/login", "/logout"]
-		if any(path.startswith(p) or path == p for p in skip_paths):
+		if not settings["enabled"]:
 			return
 
-	settings = get_device_limit_settings()
+		user = login_manager.user
 
-	if not settings["enabled"]:
-		return
+		if not user or user == "Guest":
+			return
 
-	user = frappe.session.user
+		user_roles = frappe.get_roles(user)
+		if "Moderator" in user_roles or "System Manager" in user_roles:
+			return
 
-	# Admins are exempt from device limit
-	user_roles = frappe.get_roles(user)
-	if "Moderator" in user_roles or "System Manager" in user_roles:
-		return
-
-	try:
 		device_id = get_device_id()
 		if not device_id:
 			return
 
-		limit = settings["limit"]
-
-		# Get all devices for user, ordered by creation (oldest first = first registered)
-		all_devices = frappe.get_all(
+		# 1. Device already exists with new hash — just update last_active
+		existing = frappe.db.exists(
 			"LMS User Device",
-			filters={"user": user},
-			fields=["name", "device_id", "creation"],
-			order_by="creation asc"
+			{"user": user, "device_id": device_id}
 		)
 
-		# Get the allowed devices (first N registered)
-		allowed_device_ids = set(d["device_id"] for d in all_devices[:limit])
-
-		# Check if current device is in the allowed list
-		if device_id in allowed_device_ids:
-			# Device is allowed - update last_active
-			device_name = frappe.db.get_value(
+		if existing:
+			frappe.db.set_value(
 				"LMS User Device",
-				{"user": user, "device_id": device_id},
-				"name"
+				existing,
+				"last_active",
+				now_datetime(),
+				update_modified=False
 			)
-			if device_name:
+			frappe.db.commit()
+			return
+
+		# 2. Check if device exists with the legacy (pre-normalization) hash
+		legacy_device_id = _get_legacy_device_id()
+		if legacy_device_id and legacy_device_id != device_id:
+			legacy_device = frappe.db.exists(
+				"LMS User Device",
+				{"user": user, "device_id": legacy_device_id}
+			)
+			if legacy_device:
+				# Migrate: swap old hash for new hash so future logins match instantly
 				frappe.db.set_value(
 					"LMS User Device",
-					device_name,
-					"last_active",
-					now_datetime(),
-					update_modified=False
+					legacy_device,
+					{
+						"device_id": device_id,
+						"last_active": now_datetime(),
+						"device_name": get_device_name(),
+						"ip_address": get_ip_address(),
+					}
 				)
-			return
+				frappe.db.commit()
+				return
 
-		# Device is NOT in allowed list
-		# Check if it's registered but over limit
-		all_device_ids = set(d["device_id"] for d in all_devices)
-		if device_id in all_device_ids:
-			# Device is registered but not in the allowed N - force logout
-			frappe.local.login_manager.logout()
-			frappe.db.commit()
-			frappe.throw(
-				_("This device has been logged out. You already have {0} other devices registered. Maximum allowed: {0}. Please contact admin to reset.").format(limit),
-				frappe.AuthenticationError
-			)
-
-		# Device is NOT registered at all
-		if len(all_devices) < limit:
-			# Under limit - register this new device
-			register_device(user, device_id)
-			frappe.db.commit()
-			return
-
-		# At or over limit with unregistered device - force logout
-		frappe.local.login_manager.logout()
+		# 3. Brand-new device — register it (limit was already checked before session creation)
+		register_device(user, device_id)
 		frappe.db.commit()
-		frappe.throw(
-			_("You have reached the maximum number of devices ({0}). Please contact the administrator to reset your device access.").format(limit),
-			frappe.AuthenticationError
-		)
 
-	except frappe.AuthenticationError:
-		raise
 	except Exception:
-		# Log error but don't block the request
-		frappe.log_error("Device validation failed")
-
-
-def update_device_activity(user):
-	"""
-	Update the last active time for the current device.
-	Can be called periodically to track device activity.
-
-	Args:
-		user: User ID (email)
-	"""
-	settings = get_device_limit_settings()
-
-	if not settings["enabled"]:
-		return
-
-	device_id = get_device_id()
-	if not device_id:
-		return
-
-	device_name = frappe.db.get_value(
-		"LMS User Device",
-		{"user": user, "device_id": device_id},
-		"name"
-	)
-
-	if device_name:
-		frappe.db.set_value(
-			"LMS User Device",
-			device_name,
-			"last_active",
-			now_datetime()
-		)
+		frappe.log_error("Device registration failed on login")

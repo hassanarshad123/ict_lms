@@ -8,7 +8,7 @@ from frappe.auth import LoginManager
 _original_post_login = LoginManager.post_login
 
 
-def _patched_post_login(self):
+def _patched_post_login(self, *args, **kwargs):
 	"""
 	Patched post_login that checks device limit BEFORE creating session.
 	This prevents session creation entirely if device limit is exceeded.
@@ -19,7 +19,7 @@ def _patched_post_login(self):
 	check_device_limit_before_session(self.user)
 
 	# Call original method if check passed
-	_original_post_login(self)
+	_original_post_login(self, *args, **kwargs)
 
 
 # Apply the monkey-patch
