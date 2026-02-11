@@ -82,6 +82,7 @@ import Coupons from '@/components/Settings/Coupons/Coupons.vue'
 import Transactions from '@/components/Settings/Transactions/Transactions.vue'
 import ZoomSettings from '@/components/Settings/ZoomSettings.vue'
 import Badges from '@/components/Settings/Badges.vue'
+import BulkPasswordUpdate from '@/components/Settings/BulkPasswordUpdate.vue'
 
 const show = defineModel()
 const doctype = ref('LMS Settings')
@@ -197,6 +198,13 @@ const tabsStructure = computed(() => {
 						'Add new members or manage roles and permissions of existing members',
 					icon: 'UserRoundPlus',
 					template: markRaw(Members),
+				},
+				{
+					label: 'Bulk Password Update',
+					description:
+						'Upload a CSV file to update passwords for multiple users at once',
+					icon: 'KeyRound',
+					template: markRaw(BulkPasswordUpdate),
 				},
 				{
 					label: 'Evaluators',

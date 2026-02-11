@@ -6940,6 +6940,126 @@ def admin_bulk_set_passwords(users):
 	}
 
 
+@frappe.whitelist()
+def admin_bulk_set_passwords_from_csv(file_url):
+	"""
+	Admin-only endpoint to set passwords for multiple users from a CSV file.
+
+	Args:
+		file_url (str): URL of a CSV file uploaded via Frappe File Manager.
+			CSV must have columns: email, password
+
+	Returns:
+		dict: Summary with success/failed counts and details
+	"""
+	import csv
+	import io
+
+	from frappe.utils.password import update_password
+
+	# Permission check
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "System Manager"]):
+		frappe.throw(_("You do not have permission to set user passwords."))
+
+	if not file_url:
+		frappe.throw(_("File URL is required"))
+
+	# Read the file content
+	try:
+		file_doc = frappe.get_doc("File", {"file_url": file_url})
+		content = file_doc.get_content()
+		if isinstance(content, bytes):
+			content = content.decode("utf-8-sig")
+	except Exception:
+		frappe.throw(_("Could not read the uploaded file. Please check the file URL."))
+
+	# Parse CSV
+	reader = csv.DictReader(io.StringIO(content))
+	fieldnames = reader.fieldnames or []
+
+	# Validate columns
+	required_columns = {"email", "password"}
+	found_columns = {col.strip().lower() for col in fieldnames}
+	if not required_columns.issubset(found_columns):
+		missing = required_columns - found_columns
+		frappe.throw(_("CSV is missing required columns: {0}").format(", ".join(missing)))
+
+	# Normalize column name mapping (handle case variations)
+	col_map = {}
+	for col in fieldnames:
+		col_map[col] = col.strip().lower()
+
+	rows = list(reader)
+	if len(rows) == 0:
+		frappe.throw(_("CSV file is empty"))
+
+	if len(rows) > 500:
+		frappe.throw(_("Maximum 500 users per file"))
+
+	results = {"success": [], "failed": []}
+
+	for idx, row in enumerate(rows):
+		# Build a normalized row
+		norm = {}
+		for k, v in row.items():
+			norm[col_map.get(k, k)] = (v or "").strip()
+
+		email = norm.get("email", "")
+		password = norm.get("password", "")
+
+		if not email:
+			results["failed"].append({"row": idx + 2, "email": "", "reason": "Email is required"})
+			continue
+
+		if not password:
+			results["failed"].append({"row": idx + 2, "email": email, "reason": "Password is required"})
+			continue
+
+		if not frappe.db.exists("User", email):
+			results["failed"].append({"row": idx + 2, "email": email, "reason": "User does not exist"})
+			continue
+
+		try:
+			update_password(email, password)
+			results["success"].append({"email": email})
+		except Exception as e:
+			results["failed"].append({"row": idx + 2, "email": email, "reason": str(e)})
+
+	frappe.db.commit()
+
+	return {
+		"success": True,
+		"total": len(rows),
+		"passwords_set": len(results["success"]),
+		"failed": len(results["failed"]),
+		"details": results,
+	}
+
+
+@frappe.whitelist()
+def download_bulk_password_template():
+	"""
+	Download a CSV template for bulk password updates.
+	Returns a CSV file with headers: email, password
+	"""
+	import csv
+	import io
+
+	roles = frappe.get_roles(frappe.session.user)
+	if not any(role in roles for role in ["Moderator", "Course Creator", "System Manager"]):
+		frappe.throw(_("You do not have permission to access this resource."))
+
+	output = io.StringIO()
+	writer = csv.writer(output)
+	writer.writerow(["email", "password"])
+	writer.writerow(["user@example.com", "newpassword123"])
+
+	frappe.response["filename"] = "bulk_password_template.csv"
+	frappe.response["filecontent"] = output.getvalue()
+	frappe.response["type"] = "download"
+
+
 # Device Management API Endpoints
 
 
