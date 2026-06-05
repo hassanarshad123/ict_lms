@@ -11,7 +11,8 @@
       "Bash(powershell.exe -Command \"Set-Location ''C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP\\\\ict_lms\\\\frontend''; npx vite build --base=/assets/lms/frontend/\")",
       "Bash(powershell.exe -Command \"Get-ChildItem -Path ''C:\\\\Users\\\\User\\\\Desktop\\\\LMS_APP'' -Directory | Select-Object -ExpandProperty Name\")",
       "Bash(powershell.exe:*)",
-      "Bash(git -C \"c:\\\\Users\\\\User\\\\Documents\\\\ict_lms\" log --oneline)"
+      "Bash(git -C \"c:\\\\Users\\\\User\\\\Documents\\\\ict_lms\" log --oneline)",
+      "Bash(git fetch:*)"
     ]
   }
 }
